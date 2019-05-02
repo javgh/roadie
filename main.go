@@ -40,27 +40,28 @@ type UsableOutput struct {
 	UnlockConditions types.UnlockConditions
 }
 
-func GenerateKeypair() (Keypair, error) {
+func generateKeypair() (Keypair, error) {
 	pubKey, privKey, err := ed25519.GenerateKey(nil)
 	return Keypair{PubKey: pubKey, PrivKey: privKey}, err
 }
 
-func (k Keypair) SiaPublicKey() types.SiaPublicKey {
-	return types.SiaPublicKey{
-		Algorithm: types.SignatureEd25519,
-		Key:       k.PubKey[:],
-	}
+func (k Keypair) unlockConditions() types.UnlockConditions {
+	return pubKeyUnlockConditions(k.PubKey)
 }
 
-func (k Keypair) UnlockConditions() types.UnlockConditions {
+func (k Keypair) unlockHash() types.UnlockHash {
+	return k.unlockConditions().UnlockHash()
+}
+
+func pubKeyUnlockConditions(pubKey ed25519.PublicKey) types.UnlockConditions {
+	siaPublicKey := types.SiaPublicKey{
+		Algorithm: types.SignatureEd25519,
+		Key:       pubKey[:],
+	}
 	return types.UnlockConditions{
-		PublicKeys:         []types.SiaPublicKey{k.SiaPublicKey()},
+		PublicKeys:         []types.SiaPublicKey{siaPublicKey},
 		SignaturesRequired: 1,
 	}
-}
-
-func (k Keypair) UnlockHash() types.UnlockHash {
-	return k.UnlockConditions().UnlockHash()
 }
 
 func fetchUsableOutputs(httpClient client.Client) ([]UsableOutput, error) {
@@ -150,11 +151,57 @@ func buildSimpleRefundTransaction(parentID types.SiacoinOutputID, parentUnlockCo
 }
 
 func signRefundTransaction(tx types.Transaction, blockHeight types.BlockHeight,
-	keypair Keypair) types.Transaction {
+	aliceKeypair Keypair, bobKeypair Keypair) types.Transaction {
 	wholeSigHash := tx.SigHash(0, blockHeight)
-	sig := ed25519.Sign(keypair.PrivKey, wholeSigHash[:])
+	sig, _ := jointSign(aliceKeypair, bobKeypair, wholeSigHash[:])
 	tx.TransactionSignatures[0].Signature = sig[:]
 	return tx
+}
+
+func jointSign(aliceKeypair Keypair, bobKeypair Keypair, msg []byte) ([]byte, error) {
+	aliceNoncePoint := ed25519.GenerateNoncePoint(aliceKeypair.PrivKey, msg)
+	bobNoncePoint := ed25519.GenerateNoncePoint(bobKeypair.PrivKey, msg)
+	noncePoints := []ed25519.CurvePoint{aliceNoncePoint, bobNoncePoint}
+
+	jointSigAlice, err := jointSignAlice(aliceKeypair, bobKeypair.PubKey, noncePoints, msg)
+	if err != nil {
+		return nil, err
+	}
+
+	jointSigBob, err := jointSignBob(bobKeypair, aliceKeypair.PubKey, noncePoints, msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return ed25519.AddSignature(jointSigAlice, jointSigBob), nil
+}
+
+func jointSignAlice(aliceKeypair Keypair, bobPubKey ed25519.PublicKey,
+	noncePoints []ed25519.CurvePoint, msg []byte) ([]byte, error) {
+	pubKeys := []ed25519.PublicKey{aliceKeypair.PubKey, bobPubKey}
+	aliceN := 0
+	jointPrivateKey, err := ed25519.GenerateJointPrivateKey(
+		pubKeys, aliceKeypair.PrivKey, aliceN)
+	if err != nil {
+		return nil, err
+	}
+
+	return ed25519.JointSign(
+		aliceKeypair.PrivKey, jointPrivateKey, noncePoints, msg), nil
+}
+
+func jointSignBob(bobKeypair Keypair, alicePubKey ed25519.PublicKey,
+	noncePoints []ed25519.CurvePoint, msg []byte) ([]byte, error) {
+	pubKeys := []ed25519.PublicKey{alicePubKey, bobKeypair.PubKey}
+	bobN := 1
+	jointPrivateKey, err := ed25519.GenerateJointPrivateKey(
+		pubKeys, bobKeypair.PrivKey, bobN)
+	if err != nil {
+		return nil, err
+	}
+
+	return ed25519.JointSign(
+		bobKeypair.PrivKey, jointPrivateKey, noncePoints, msg), nil
 }
 
 func broadcastTransaction(httpClient client.Client, tx types.Transaction) error {
@@ -191,10 +238,29 @@ func main() {
 	fmt.Printf("Confirmed siacoin balance: %s\n", status.ConfirmedSiacoinBalance.HumanString())
 	fmt.Printf("Height: %d\n", status.Height)
 
-	playKeypair, err := GenerateKeypair()
+	aliceKeypair, err := generateKeypair()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	bobKeypair, err := generateKeypair()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	jointPubKey, _, err := ed25519.GenerateJointKey([]ed25519.PublicKey{aliceKeypair.PubKey, bobKeypair.PubKey})
+	jointUnlockConditions := pubKeyUnlockConditions(jointPubKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Joint unlock hash: %s\n", jointUnlockConditions.UnlockHash())
+
+	//msg := []byte("this is a test")
+	//jointSig, err := jointSign(aliceKeypair, bobKeypair, msg)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//fmt.Println(ed25519.Verify(jointPubKey, msg, jointSig))
 
 	usableOutputs, err := fetchUsableOutputs(httpClient)
 	if err != nil {
@@ -206,7 +272,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	tx, err := buildFundingTransaction(usableOutputs, change.Address, playKeypair.UnlockHash(), twoSiacoins)
+	tx, err := buildFundingTransaction(usableOutputs, change.Address, jointUnlockConditions.UnlockHash(), twoSiacoins)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -221,12 +287,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	refundTx := buildSimpleRefundTransaction(tx.SiacoinOutputID(0), playKeypair.UnlockConditions(), result2.Address, status.Height)
+	refundTx := buildSimpleRefundTransaction(tx.SiacoinOutputID(0), jointUnlockConditions,
+		result2.Address, status.Height)
 
-	refundTx = signRefundTransaction(refundTx, status.Height, playKeypair)
+	refundTx = signRefundTransaction(refundTx, status.Height, aliceKeypair, bobKeypair)
 
-	fmt.Printf("funding tx encoded: %s\n", base64.StdEncoding.EncodeToString(encoding.Marshal(tx)))
-	fmt.Printf("refund tx encoded: %s\n", base64.StdEncoding.EncodeToString(encoding.Marshal(refundTx)))
+	fmt.Printf("Funding tx encoded: %s\n", base64.StdEncoding.EncodeToString(encoding.Marshal(tx)))
+	fmt.Printf("Refund tx encoded: %s\n", base64.StdEncoding.EncodeToString(encoding.Marshal(refundTx)))
 
 	//err = broadcastTransaction(httpClient, tx)
 	//if err != nil {

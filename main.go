@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/NebulousLabs/Sia/crypto"
 	"gitlab.com/NebulousLabs/Sia/encoding"
+	"gitlab.com/NebulousLabs/Sia/modules"
 	"gitlab.com/NebulousLabs/Sia/node/api/client"
 	"gitlab.com/NebulousLabs/Sia/types"
 
@@ -34,13 +35,14 @@ type Keypair struct {
 	PrivKey ed25519.PrivateKey
 }
 
-func GenerateKeypair() Keypair {
-	pubKey, privKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+type UsableOutput struct {
+	UnspentOutput    modules.UnspentOutput
+	UnlockConditions types.UnlockConditions
+}
 
-	return Keypair{PubKey: pubKey, PrivKey: privKey}
+func GenerateKeypair() (Keypair, error) {
+	pubKey, privKey, err := ed25519.GenerateKey(nil)
+	return Keypair{PubKey: pubKey, PrivKey: privKey}, err
 }
 
 func (k Keypair) SiaPublicKey() types.SiaPublicKey {
@@ -61,70 +63,49 @@ func (k Keypair) UnlockHash() types.UnlockHash {
 	return k.UnlockConditions().UnlockHash()
 }
 
-//func playgroundUnlockHash() types.UnlockHash {
-//	_, publicKey1 := crypto.GenerateKeyPair()
-//	siaPublicKey1 := types.Ed25519PublicKey(publicKey1)
-//
-//	_, publicKey2 := crypto.GenerateKeyPair()
-//	siaPublicKey2 := types.Ed25519PublicKey(publicKey2)
-//
-//	unlockConditions := types.UnlockConditions{
-//		PublicKeys:         []types.SiaPublicKey{siaPublicKey1, siaPublicKey2},
-//		SignaturesRequired: 1,
-//	}
-//
-//	return unlockConditions.UnlockHash()
-//}
-
-//func playgroundKeysAndUnlockConditions() (crypto.SecretKey, crypto.PublicKey, types.UnlockConditions) {
-//	privKey, pubKey := crypto.GenerateKeyPair()
-//	siaPubKey := types.Ed25519PublicKey(pubKey)
-//	unlockConditions := types.UnlockConditions{
-//		PublicKeys:         []types.SiaPublicKey{siaPubKey},
-//		SignaturesRequired: 1,
-//	}
-//	return privKey, pubKey, unlockConditions
-//}
-
-func buildFundingTransaction(httpClient client.Client,
-	destinationUnlockHash types.UnlockHash, value types.Currency) (types.Transaction, error) {
-	tx := types.Transaction{}
-
+func fetchUsableOutputs(httpClient client.Client) ([]UsableOutput, error) {
 	unspent, err := httpClient.WalletUnspentGet()
 	if err != nil {
-		return tx, err
+		return nil, err
 	}
 
-	change, err := httpClient.WalletAddressGet()
-	if err != nil {
-		return tx, err
-	}
-
-	sum := types.ZeroCurrency
-	threshold := value.Add(defaultMinerFee)
-	for _, output := range unspent.Outputs {
-		if output.FundType != types.SpecifierSiacoinOutput {
+	var usableOutputs []UsableOutput
+	for _, unspentOutput := range unspent.Outputs {
+		if unspentOutput.FundType != types.SpecifierSiacoinOutput {
 			continue
 		}
 
-		result, err := httpClient.WalletUnlockConditionsGet(output.UnlockHash)
+		result, err := httpClient.WalletUnlockConditionsGet(unspentOutput.UnlockHash)
 		if err != nil {
-			return tx, err
+			return nil, err
 		}
 
+		usableOutputs = append(usableOutputs,
+			UsableOutput{UnspentOutput: unspentOutput, UnlockConditions: result.UnlockConditions})
+	}
+
+	return usableOutputs, nil
+}
+
+func buildFundingTransaction(usableOutputs []UsableOutput, changeUnlockHash types.UnlockHash,
+	destinationUnlockHash types.UnlockHash, value types.Currency) (types.Transaction, error) {
+	tx := types.Transaction{}
+	sum := types.ZeroCurrency
+	threshold := value.Add(defaultMinerFee)
+	for _, usableOutput := range usableOutputs {
 		input := types.SiacoinInput{
-			ParentID:         types.SiacoinOutputID(output.ID),
-			UnlockConditions: result.UnlockConditions,
+			ParentID:         types.SiacoinOutputID(usableOutput.UnspentOutput.ID),
+			UnlockConditions: usableOutput.UnlockConditions,
 		}
 		tx.SiacoinInputs = append(tx.SiacoinInputs, input)
 
 		signature := types.TransactionSignature{
-			ParentID:      crypto.Hash(output.ID),
+			ParentID:      crypto.Hash(usableOutput.UnspentOutput.ID),
 			CoveredFields: types.CoveredFields{WholeTransaction: true},
 		}
 		tx.TransactionSignatures = append(tx.TransactionSignatures, signature)
 
-		sum = sum.Add(output.Value)
+		sum = sum.Add(usableOutput.UnspentOutput.Value)
 		if sum.Cmp(threshold) == 1 {
 			// only stop when strictly above the needed amount; this way we
 			// always have a change output and have only one codepath
@@ -141,7 +122,7 @@ func buildFundingTransaction(httpClient client.Client,
 		UnlockHash: destinationUnlockHash,
 	}, {
 		Value:      sum.Sub(value).Sub(defaultMinerFee),
-		UnlockHash: change.Address,
+		UnlockHash: changeUnlockHash,
 	}}
 	tx.MinerFees = []types.Currency{defaultMinerFee}
 
@@ -210,54 +191,41 @@ func main() {
 	fmt.Printf("Confirmed siacoin balance: %s\n", status.ConfirmedSiacoinBalance.HumanString())
 	fmt.Printf("Height: %d\n", status.Height)
 
-	//playPrivKey, playPubKey, playUnlockConditions := playgroundKeysAndUnlockConditions()
-	playKeypair := GenerateKeypair()
-	fmt.Printf("Playground public key: %x\n", playKeypair.PubKey)
-	fmt.Printf("Playground private key: %x\n", playKeypair.PrivKey)
-	fmt.Printf("Playground unlock hash: %s\n", playKeypair.UnlockHash())
-
-	//result, err := httpClient.WalletSiacoinsPost(oneSiacoin, unlockHash)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//fmt.Println(result)
-
-	//var hash crypto.Hash
-	//hash.LoadString("de6a8f1dfa2db63156d9b0397d384694a8d99a82854aed358e974e1bfdb36436")
-	//fmt.Println(hash)
-	//ptx, err := httpClient.WalletTransactionGet(types.TransactionID(hash))
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//fmt.Println(ptx)
-
-	tx, err := buildFundingTransaction(httpClient, playKeypair.UnlockHash(), twoSiacoins)
+	playKeypair, err := GenerateKeypair()
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(tx)
+
+	usableOutputs, err := fetchUsableOutputs(httpClient)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	change, err := httpClient.WalletAddressGet()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tx, err := buildFundingTransaction(usableOutputs, change.Address, playKeypair.UnlockHash(), twoSiacoins)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	result, err := httpClient.WalletSignPost(tx, []crypto.Hash{})
 	tx = result.Transaction
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(tx)
-
-	fmt.Printf("wholeSigHash: %s\n", tx.SigHash(0, status.Height))
-	fmt.Printf("funding output ID: %s\n", tx.SiacoinOutputID(0))
 
 	result2, err := httpClient.WalletAddressGet()
 	if err != nil {
 		log.Fatal(err)
 	}
 	refundTx := buildSimpleRefundTransaction(tx.SiacoinOutputID(0), playKeypair.UnlockConditions(), result2.Address, status.Height)
-	fmt.Println(refundTx)
 
 	refundTx = signRefundTransaction(refundTx, status.Height, playKeypair)
-	fmt.Println(refundTx)
 
-	fmt.Printf("tx encoded: %s\n", base64.StdEncoding.EncodeToString(encoding.Marshal(tx)))
+	fmt.Printf("funding tx encoded: %s\n", base64.StdEncoding.EncodeToString(encoding.Marshal(tx)))
 	fmt.Printf("refund tx encoded: %s\n", base64.StdEncoding.EncodeToString(encoding.Marshal(refundTx)))
 
 	//err = broadcastTransaction(httpClient, tx)
@@ -269,21 +237,4 @@ func main() {
 	//if err != nil {
 	//	log.Fatal(err)
 	//}
-
-	//for _, output := range unspent.Outputs {
-	//	if output.FundType != types.SpecifierSiacoinOutput {
-	//		continue
-	//	}
-
-	//	fmt.Println(output)
-	//}
-
-	//result, err := httpClient.WalletAddressGet()
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//fmt.Printf("Fresh wallet address: %s\n", result.Address)
-
-	// ed25519.GenerateKey(nil)
-	// asSiaPublicKey -> construct SiaPublicKey
 }

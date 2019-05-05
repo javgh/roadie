@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
@@ -130,7 +131,7 @@ func buildFundingTransaction(usableOutputs []UsableOutput, changeUnlockHash type
 	return tx, nil
 }
 
-func buildSimpleRefundTransaction(parentID types.SiacoinOutputID, parentUnlockConditions types.UnlockConditions,
+func buildRefundTransaction(parentID types.SiacoinOutputID, parentUnlockConditions types.UnlockConditions,
 	destinationUnlockHash types.UnlockHash, blockHeight types.BlockHeight) types.Transaction {
 	tx := types.Transaction{}
 	tx.SiacoinInputs = []types.SiacoinInput{{
@@ -150,18 +151,43 @@ func buildSimpleRefundTransaction(parentID types.SiacoinOutputID, parentUnlockCo
 	return tx
 }
 
-func signRefundTransaction(tx types.Transaction, blockHeight types.BlockHeight,
-	aliceKeypair Keypair, bobKeypair Keypair) types.Transaction {
-	wholeSigHash := tx.SigHash(0, blockHeight)
-	sig, _ := jointSign(aliceKeypair, bobKeypair, wholeSigHash[:])
-	tx.TransactionSignatures[0].Signature = sig[:]
+func buildClaimTransaction(parentID types.SiacoinOutputID, parentUnlockConditions types.UnlockConditions,
+	destinationUnlockHash types.UnlockHash) types.Transaction {
+	tx := types.Transaction{}
+	tx.SiacoinInputs = []types.SiacoinInput{{
+		ParentID:         parentID,
+		UnlockConditions: parentUnlockConditions,
+	}}
+	tx.SiacoinOutputs = []types.SiacoinOutput{{
+		Value:      oneSiacoin,
+		UnlockHash: destinationUnlockHash,
+	}}
+	tx.MinerFees = []types.Currency{defaultMinerFee}
+	tx.TransactionSignatures = []types.TransactionSignature{{
+		ParentID:      crypto.Hash(parentID),
+		CoveredFields: types.CoveredFields{WholeTransaction: true},
+	}}
 	return tx
 }
 
-func jointSign(aliceKeypair Keypair, bobKeypair Keypair, msg []byte) ([]byte, error) {
+func wholeSigHash(tx types.Transaction, blockHeight types.BlockHeight) []byte {
+	sigHash := tx.SigHash(0, blockHeight)
+	return sigHash[:]
+}
+
+func addSignature(tx types.Transaction, signature []byte) types.Transaction {
+	tx.TransactionSignatures[0].Signature = signature
+	return tx
+}
+
+func buildNoncePoints(aliceKeypair Keypair, bobKeypair Keypair, msg []byte) []ed25519.CurvePoint {
 	aliceNoncePoint := ed25519.GenerateNoncePoint(aliceKeypair.PrivKey, msg)
 	bobNoncePoint := ed25519.GenerateNoncePoint(bobKeypair.PrivKey, msg)
-	noncePoints := []ed25519.CurvePoint{aliceNoncePoint, bobNoncePoint}
+	return []ed25519.CurvePoint{aliceNoncePoint, bobNoncePoint}
+}
+
+func jointSign(aliceKeypair Keypair, bobKeypair Keypair, msg []byte) ([]byte, error) {
+	noncePoints := buildNoncePoints(aliceKeypair, bobKeypair, msg)
 
 	jointSigAlice, err := jointSignAlice(aliceKeypair, bobKeypair.PubKey, noncePoints, msg)
 	if err != nil {
@@ -202,6 +228,40 @@ func jointSignBob(bobKeypair Keypair, alicePubKey ed25519.PublicKey,
 
 	return ed25519.JointSign(
 		bobKeypair.PrivKey, jointPrivateKey, noncePoints, msg), nil
+}
+
+func jointSignWithAdaptorBob(bobKeypair Keypair, alicePubKey ed25519.PublicKey,
+	noncePoints []ed25519.CurvePoint, adaptorPubKey ed25519.CurvePoint, msg []byte) ([]byte, error) {
+	pubKeys := []ed25519.PublicKey{alicePubKey, bobKeypair.PubKey}
+	bobN := 1
+	jointPrivateKey, err := ed25519.GenerateJointPrivateKey(
+		pubKeys, bobKeypair.PrivKey, bobN)
+	if err != nil {
+		return nil, err
+	}
+
+	return ed25519.JointSignWithAdaptor(
+		bobKeypair.PrivKey, jointPrivateKey, noncePoints[0], noncePoints[1], adaptorPubKey, msg), nil
+}
+
+func verifyAdaptorSignature(bobPrimeKey ed25519.PublicKey, jointPubKey ed25519.PublicKey,
+	noncePoints []ed25519.CurvePoint, adaptorPubKey ed25519.CurvePoint, msg []byte, sig []byte) bool {
+	return ed25519.VerifyAdaptorSignature(
+		bobPrimeKey, jointPubKey, noncePoints[0], noncePoints[1], adaptorPubKey, msg, sig)
+}
+
+func jointSignWithAdaptorAlice(aliceKeypair Keypair, bobPubKey ed25519.PublicKey,
+	noncePoints []ed25519.CurvePoint, adaptorPubKey ed25519.CurvePoint, msg []byte) ([]byte, error) {
+	pubKeys := []ed25519.PublicKey{aliceKeypair.PubKey, bobPubKey}
+	aliceN := 0
+	jointPrivateKey, err := ed25519.GenerateJointPrivateKey(
+		pubKeys, aliceKeypair.PrivKey, aliceN)
+	if err != nil {
+		return nil, err
+	}
+
+	return ed25519.JointSignWithAdaptor(
+		aliceKeypair.PrivKey, jointPrivateKey, noncePoints[0], noncePoints[1], adaptorPubKey, msg), nil
 }
 
 func broadcastTransaction(httpClient client.Client, tx types.Transaction) error {
@@ -248,7 +308,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	jointPubKey, _, err := ed25519.GenerateJointKey([]ed25519.PublicKey{aliceKeypair.PubKey, bobKeypair.PubKey})
+	jointPubKey, primeKeys, err := ed25519.GenerateJointKey([]ed25519.PublicKey{aliceKeypair.PubKey, bobKeypair.PubKey})
 	jointUnlockConditions := pubKeyUnlockConditions(jointPubKey)
 	if err != nil {
 		log.Fatal(err)
@@ -282,18 +342,50 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Printf("Funding tx encoded: %s\n", base64.StdEncoding.EncodeToString(encoding.Marshal(tx)))
 
 	result2, err := httpClient.WalletAddressGet()
 	if err != nil {
 		log.Fatal(err)
 	}
-	refundTx := buildSimpleRefundTransaction(tx.SiacoinOutputID(0), jointUnlockConditions,
-		result2.Address, status.Height)
-
-	refundTx = signRefundTransaction(refundTx, status.Height, aliceKeypair, bobKeypair)
-
-	fmt.Printf("Funding tx encoded: %s\n", base64.StdEncoding.EncodeToString(encoding.Marshal(tx)))
+	refundTx := buildRefundTransaction(tx.SiacoinOutputID(0), jointUnlockConditions, result2.Address, status.Height)
+	refundTxSigHash := wholeSigHash(refundTx, status.Height)
+	refundTxSig, err := jointSign(aliceKeypair, bobKeypair, refundTxSigHash)
+	if err != nil {
+		log.Fatal(err)
+	}
+	refundTx = addSignature(refundTx, refundTxSig)
 	fmt.Printf("Refund tx encoded: %s\n", base64.StdEncoding.EncodeToString(encoding.Marshal(refundTx)))
+
+	claimTx := buildClaimTransaction(tx.SiacoinOutputID(0), jointUnlockConditions, result2.Address)
+	claimTxSighHash := wholeSigHash(claimTx, status.Height)
+
+	adaptorPrivKey, adaptorPubKey, err := ed25519.GenerateAdaptor(rand.Reader)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	noncePoints := buildNoncePoints(aliceKeypair, bobKeypair, claimTxSighHash)
+	adaptorSigBob, err := jointSignWithAdaptorBob(bobKeypair, aliceKeypair.PubKey, noncePoints, adaptorPubKey, claimTxSighHash)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	adaptorSigOk := verifyAdaptorSignature(primeKeys[1], jointPubKey, noncePoints, adaptorPubKey, claimTxSighHash, adaptorSigBob)
+	fmt.Printf("Adaptor sig verified: %t\n", adaptorSigOk)
+
+	adaptorSigAlice, err := jointSignWithAdaptorAlice(aliceKeypair, bobKeypair.PubKey, noncePoints, adaptorPubKey, claimTxSighHash)
+	if err != nil {
+		log.Fatal(err)
+	}
+	claimTxSig := ed25519.AddSignature(adaptorSigAlice, adaptorSigBob)
+	claimTxSig = ed25519.AddSignature(claimTxSig, append(adaptorPubKey, adaptorPrivKey...))
+
+	claimTxSigOk := ed25519.Verify(jointPubKey, claimTxSighHash, claimTxSig)
+	fmt.Printf("Claim tx sig verified: %t\n", claimTxSigOk)
+
+	claimTx = addSignature(claimTx, claimTxSig)
+	fmt.Printf("Claim tx encoded: %s\n", base64.StdEncoding.EncodeToString(encoding.Marshal(claimTx)))
 
 	//err = broadcastTransaction(httpClient, tx)
 	//if err != nil {
@@ -304,4 +396,18 @@ func main() {
 	//if err != nil {
 	//	log.Fatal(err)
 	//}
+
+	// Approach 1:
+	// Alice: think of adaptor
+	// Alice: lock ether behind adaptor
+	// Alice: ed25519.JointSignWithAdaptor
+	// Bob: VerifyAdaptorSignature, JointSignWithAdaptor
+	// Alice: combine signatures, add adaptor, send tx
+	// Bob: notice tx, extract adaptor, claim ether
+	//
+	// Approach 2:
+	// Bob: think of adaptor, JointSignWithAdaptor
+	// Alice: VerifyAdaptorSignature, lock ether behind adaptor
+	// Bob: claim ether
+	// Alice: see adaptor, JointSignWithAdaptor, combine signatures, add adaptor, send tx
 }

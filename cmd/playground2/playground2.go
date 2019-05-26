@@ -17,6 +17,7 @@ import (
 	"github.com/javgh/roadie/blockchain/sia"
 	"github.com/javgh/roadie/bob"
 	"github.com/javgh/roadie/keypair"
+	"github.com/javgh/roadie/trader"
 )
 
 const (
@@ -35,20 +36,25 @@ var (
 
 type mockTrader struct{}
 
-func (mt *mockTrader) PrepareNonBindingOffer(siacoin types.Currency,
-	txFee types.Currency) (msg string, available bool, ether *big.Int, antiSpamFee *big.Int, err error) {
-	return "playground offer", true, finney, defaultAntiSpamFee, nil
+func (mt *mockTrader) PrepareNonBindingOffer(siacoin types.Currency, minerFee types.Currency) (*trader.Offer, error) {
+	offer := trader.Offer{
+		Msg:         "playground offer",
+		Available:   true,
+		Ether:       *finney,
+		AntiSpamFee: *defaultAntiSpamFee,
+	}
+	return &offer, nil
 }
 
-func (mt *mockTrader) PrepareBindingOffer(siacoin types.Currency, txFee types.Currency,
-	now time.Time) (msg string, available bool, ether *big.Int, deadline *time.Time, err error) {
-	msg, available, ether, _, err = mt.PrepareNonBindingOffer(siacoin, txFee)
+func (mt *mockTrader) PrepareBindingOffer(siacoin types.Currency, minerFee types.Currency,
+	now time.Time) (*trader.Offer, *time.Time, error) {
+	offer, err := mt.PrepareNonBindingOffer(siacoin, minerFee)
 	if err != nil {
-		return err.Error(), false, nil, nil, err
+		return nil, nil, err
 	}
 
-	deadline_ := now.Add(bindingOfferLifetime)
-	return msg, available, ether, &deadline_, nil
+	deadline := now.Add(bindingOfferLifetime)
+	return offer, &deadline, nil
 }
 
 func (mt *mockTrader) PauseOrderPreparation(now time.Time) {
@@ -99,22 +105,22 @@ func main() {
 	blacklist := bob.NewBlacklist()
 	atomicSwap := bob.NewAtomicSwap(&mockTrader, &mockChain, siaChain, blacklist, time.Now())
 
-	msg, available, ether, antiSpamFee, err := atomicSwap.RequestNonBindingOffer(oneSiacoin)
+	offer, err := atomicSwap.RequestNonBindingOffer(oneSiacoin)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(msg, available, ether, antiSpamFee)
+	fmt.Println(offer)
 
 	antiSpamID, err := rand.Int(rand.Reader, maxAntiSpamID)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	msg, available, ether, err = atomicSwap.RequestBindingOffer(oneSiacoin, *antiSpamID, time.Now())
+	offer, err = atomicSwap.RequestBindingOffer(*antiSpamID, time.Now())
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(msg, available, ether)
+	fmt.Println(offer)
 
 	aliceKeypair, err := keypair.Generate()
 	if err != nil {

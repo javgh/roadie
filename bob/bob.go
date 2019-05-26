@@ -119,59 +119,57 @@ func NewAtomicSwap(trader trader.Trader, ethChain ethereum.Blockchain, siaChain 
 	}
 }
 
-func (s *AtomicSwap) RequestNonBindingOffer(
-	siacoin types.Currency) (msg string, available bool, ether *big.Int, antiSpamFee *big.Int, err error) {
+func (s *AtomicSwap) RequestNonBindingOffer(siacoin types.Currency) (*trader.Offer, error) {
 	if s.state != stateInitialized {
-		return ErrWrongState.Error(), false, nil, nil, ErrWrongState
+		return nil, ErrWrongState
 	}
 
-	msg, available, ether, antiSpamFee, err = s.trader.PrepareNonBindingOffer(siacoin, defaultMinerFee)
+	offer, err := s.trader.PrepareNonBindingOffer(siacoin, defaultMinerFee)
 	if err != nil {
-		return err.Error(), false, nil, nil, err
+		return nil, err
 	}
 
-	s.antiSpamFee = *antiSpamFee
+	s.siacoin = siacoin
+	s.antiSpamFee = offer.AntiSpamFee
 	s.state = stateMadeNonBindingOffer
-	return msg, available, ether, antiSpamFee, nil
+	return offer, nil
 }
 
-func (s *AtomicSwap) RequestBindingOffer(siacoin types.Currency, antiSpamID big.Int,
-	now time.Time) (msg string, available bool, ether *big.Int, err error) {
+func (s *AtomicSwap) RequestBindingOffer(antiSpamID big.Int, now time.Time) (*trader.Offer, error) {
 	if s.state != stateMadeNonBindingOffer {
-		return ErrWrongState.Error(), false, nil, ErrWrongState
+		return nil, ErrWrongState
 	}
 
-	msg, available, ether, deadline, err := s.trader.PrepareBindingOffer(siacoin, defaultMinerFee, now)
+	offer, deadline, err := s.trader.PrepareBindingOffer(s.siacoin, defaultMinerFee, now)
 	if err != nil {
-		return err.Error(), false, nil, err
+		return nil, err
 	}
 
-	if !available {
-		return msg, available, ether, nil
+	if !offer.Available {
+		return offer, nil
 	}
 
 	if s.blacklist.contains(antiSpamID) {
-		return ErrAntiSpamReused.Error(), false, nil, ErrAntiSpamReused
+		return nil, ErrAntiSpamReused
 	}
 
 	ok, err := s.ethChain.VerifyAntiSpamPayment(antiSpamID, s.antiSpamFee)
 	if err != nil {
-		return err.Error(), false, nil, err
+		return nil, err
 	}
 
 	if !ok {
-		return ErrAntiSpamNotDetected.Error(), false, nil, ErrAntiSpamNotDetected
+		return nil, ErrAntiSpamNotDetected
 	}
 
 	s.blacklist.add(antiSpamID)
 	s.trader.PauseOrderPreparation(now)
 
-	s.siacoin = siacoin
-	s.ether = *ether
+	s.ether = offer.Ether
 	s.antiSpamID = antiSpamID
 	s.deadline = deadline
 	s.state = stateMadeBindingOffer
-	return msg, available, ether, nil
+	return offer, nil
 }
 
 func (s *AtomicSwap) AcceptOffer(alicePubKey ed25519.PublicKey, now time.Time) (*RefundDetails, error) {

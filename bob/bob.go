@@ -72,7 +72,7 @@ const (
 	stateCompleted
 	stateAborted
 
-	timelockOffset = types.BlockHeight(0)
+	timelockOffset = types.BlockHeight(1)
 )
 
 var (
@@ -347,7 +347,8 @@ func (s *AtomicSwap) AnnounceDeposit() error {
 }
 
 func (s *AtomicSwap) Rollback() {
-	if s.state == stateFunded {
+	if s.state == stateFunded || s.state == stateProvidedAdaptorDetails ||
+		s.state == stateCompleted {
 		fmt.Printf("Refund: %s\n", sia.EncodeTransaction(s.refundTx))
 	}
 	s.state = stateAborted

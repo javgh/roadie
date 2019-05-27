@@ -18,6 +18,10 @@ type (
 		httpClient client.Client
 	}
 
+	NoBroadcastBlockchain struct {
+		chain HTTPAPIBlockchain
+	}
+
 	Blockchain interface {
 		FetchUsableOutputs() ([]UsableOutput, error)
 		NextWalletUnlockHash() (*types.UnlockHash, error)
@@ -106,8 +110,31 @@ func (c *HTTPAPIBlockchain) WalletSign(tx types.Transaction) (*types.Transaction
 }
 
 func (c *HTTPAPIBlockchain) BroadcastTransaction(tx types.Transaction) error {
-	//return c.httpClient.TransactionPoolRawPost(tx, []types.Transaction{})
-	fmt.Printf("Broadcast: %s\n", EncodeTransaction(tx))
+	return c.httpClient.TransactionPoolRawPost(tx, []types.Transaction{})
+}
+
+func NewNoBroadcastBlockchain(chain HTTPAPIBlockchain) NoBroadcastBlockchain {
+	return NoBroadcastBlockchain{chain: chain}
+}
+
+func (c *NoBroadcastBlockchain) FetchUsableOutputs() ([]UsableOutput, error) {
+	return c.chain.FetchUsableOutputs()
+}
+
+func (c *NoBroadcastBlockchain) NextWalletUnlockHash() (*types.UnlockHash, error) {
+	return c.chain.NextWalletUnlockHash()
+}
+
+func (c *NoBroadcastBlockchain) Height() (*types.BlockHeight, error) {
+	return c.chain.Height()
+}
+
+func (c *NoBroadcastBlockchain) WalletSign(tx types.Transaction) (*types.Transaction, error) {
+	return c.chain.WalletSign(tx)
+}
+
+func (c *NoBroadcastBlockchain) BroadcastTransaction(tx types.Transaction) error {
+	fmt.Printf("Skipping broadcast for: %s\n", EncodeTransaction(tx))
 	return nil
 }
 

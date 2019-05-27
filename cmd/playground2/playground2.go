@@ -99,11 +99,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	nbSiaChain := sia.NewNoBroadcastBlockchain(*siaChain)
 
 	mockTrader := mockTrader{}
 	mockChain := mockChain{}
 	blacklist := bob.NewBlacklist()
-	atomicSwap := bob.NewAtomicSwap(&mockTrader, &mockChain, siaChain, blacklist, time.Now())
+	atomicSwap := bob.NewAtomicSwap(&mockTrader, &mockChain, &nbSiaChain, blacklist, time.Now())
 
 	offer, err := atomicSwap.RequestNonBindingOffer(oneSiacoin)
 	if err != nil {
@@ -196,4 +197,6 @@ func main() {
 
 	claimTx = sia.AddSignature(claimTx, claimSig)
 	fmt.Printf("Claim: %s\n", sia.EncodeTransaction(claimTx))
+
+	atomicSwap.Rollback()
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/HyperspaceApp/ed25519"
 	"gitlab.com/NebulousLabs/Sia/crypto"
@@ -243,4 +244,10 @@ func AddSignature(tx types.Transaction, signature []byte) types.Transaction {
 
 func EncodeTransaction(tx types.Transaction) string {
 	return base64.StdEncoding.EncodeToString(encoding.Marshal(tx))
+}
+
+func ApplyRate(siacoin types.Currency, rate *big.Float) *big.Float {
+	r := new(big.Rat).SetFrac(siacoin.Big(), types.SiacoinPrecision.Big())
+	f := new(big.Float).Mul(new(big.Float).SetRat(r), rate)
+	return f
 }

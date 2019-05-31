@@ -14,6 +14,7 @@ import (
 	"github.com/HyperspaceApp/ed25519"
 	"gitlab.com/NebulousLabs/Sia/types"
 
+	"github.com/javgh/roadie/alice"
 	"github.com/javgh/roadie/blockchain/sia"
 	"github.com/javgh/roadie/bob"
 	"github.com/javgh/roadie/keypair"
@@ -28,7 +29,7 @@ const (
 var (
 	oneSiacoin              = types.SiacoinPrecision
 	defaultMinerFee         = oneSiacoin
-	finney                  = new(big.Int).Exp(big.NewInt(10), big.NewInt(15), nil)
+	finney                  = big.NewInt(1e15)
 	defaultAntiSpamFee      = finney
 	maxAntiSpamID           = new(big.Int).Exp(big.NewInt(2), big.NewInt(64), nil)
 	bindingOfferLifetime, _ = time.ParseDuration("1m")
@@ -89,6 +90,21 @@ func prependHomeDirectory(path string) string {
 }
 
 func main() {
+	consoleFrontend := alice.NewConsoleFrontend()
+
+	sampleOffer := trader.Offer{
+		Msg:         "Hello, World!",
+		Available:   true,
+		Ether:       *finney,
+		AntiSpamFee: *finney,
+	}
+	_, err := consoleFrontend.ApproveOffer(oneSiacoin, sampleOffer, false)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func main2() {
 	passwordBytes, err := ioutil.ReadFile(prependHomeDirectory(defaultPasswordFile))
 	if err != nil {
 		log.Fatal(err)

@@ -61,26 +61,29 @@ func NewExchangeRate() ExchangeRate {
 }
 
 func (r *ExchangeRate) Fetch(id string) (*big.Float, error) {
-	usd, ok := r.cache.Get(id)
-	if ok {
-		return usd.(*big.Float), nil
-	}
-
-	resp, err := r.client.Get(exchangeRateEndpoint)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
 	var rates []Rate
-	err = json.Unmarshal(body, &rates)
-	if err != nil {
-		return nil, err
+
+	entry, ok := r.cache.Get("rates")
+	if ok {
+		rates = entry.([]Rate)
+	} else {
+		resp, err := r.client.Get(exchangeRateEndpoint)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		err = json.Unmarshal(body, &rates)
+		if err != nil {
+			return nil, err
+		}
+
+		r.cache.Set("rates", rates, cache.DefaultExpiration)
 	}
 
 	for _, rate := range rates {
@@ -90,7 +93,6 @@ func (r *ExchangeRate) Fetch(id string) (*big.Float, error) {
 				return nil, ErrParsingFailed
 			}
 
-			r.cache.Set(id, usd, cache.DefaultExpiration)
 			return usd, nil
 		}
 	}

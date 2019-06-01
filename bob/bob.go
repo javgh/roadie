@@ -72,7 +72,8 @@ const (
 	stateCompleted
 	stateAborted
 
-	timelockOffset = types.BlockHeight(1)
+	timelockOffset        = types.BlockHeight(1)
+	antiSpamConfirmations = 8
 )
 
 var (
@@ -153,12 +154,12 @@ func (s *AtomicSwap) RequestBindingOffer(antiSpamID big.Int, now time.Time) (*tr
 		return nil, ErrAntiSpamReused
 	}
 
-	ok, err := s.ethChain.VerifyAntiSpamPayment(antiSpamID, s.antiSpamFee)
+	confs, err := s.ethChain.CheckAntiSpamConfirmations(antiSpamID, s.antiSpamFee)
 	if err != nil {
 		return nil, err
 	}
 
-	if !ok {
+	if confs < antiSpamConfirmations {
 		return nil, ErrAntiSpamNotDetected
 	}
 

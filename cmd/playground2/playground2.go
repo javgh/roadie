@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	defaultClientAddress = "localhost:9980"
-	defaultPasswordFile  = ".sia/apipassword"
+	defaultClientAddress  = "localhost:9980"
+	defaultPasswordFile   = ".sia/apipassword"
+	antiSpamConfirmations = 10
 )
 
 var (
@@ -68,8 +69,12 @@ type mockChain struct {
 	adaptorPrivKey ed25519.Adaptor
 }
 
-func (mc *mockChain) VerifyAntiSpamPayment(antiSpamID big.Int, antiSpamFee big.Int) (bool, error) {
-	return true, nil
+func (mc *mockChain) BurnAntiSpamFee(antiSpamID big.Int, antiSpamFee big.Int) error {
+	return nil
+}
+
+func (mc *mockChain) CheckAntiSpamConfirmations(antiSpamID big.Int, antiSpamFee big.Int) (int, error) {
+	return antiSpamConfirmations, nil
 }
 
 func (mc *mockChain) CheckDeposit(adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) (bool, error) {
@@ -90,21 +95,6 @@ func prependHomeDirectory(path string) string {
 }
 
 func main() {
-	consoleFrontend := alice.NewConsoleFrontend()
-
-	sampleOffer := trader.Offer{
-		Msg:         "Hello, World!",
-		Available:   true,
-		Ether:       *finney,
-		AntiSpamFee: *finney,
-	}
-	_, err := consoleFrontend.ApproveOffer(oneSiacoin, sampleOffer, false)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func main2() {
 	passwordBytes, err := ioutil.ReadFile(prependHomeDirectory(defaultPasswordFile))
 	if err != nil {
 		log.Fatal(err)
@@ -122,22 +112,48 @@ func main2() {
 	blacklist := bob.NewBlacklist()
 	atomicSwap := bob.NewAtomicSwap(&mockTrader, &mockChain, &nbSiaChain, blacklist, time.Now())
 
-	offer, err := atomicSwap.RequestNonBindingOffer(oneSiacoin)
+	nonBindingOffer, err := atomicSwap.RequestNonBindingOffer(oneSiacoin)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(offer)
+
+	consoleFrontend := alice.NewConsoleFrontend()
+	_, err = consoleFrontend.ApproveOffer(oneSiacoin, *nonBindingOffer, false)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	antiSpamID, err := rand.Int(rand.Reader, maxAntiSpamID)
 	if err != nil {
 		log.Fatal(err)
 	}
+	mockChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer.AntiSpamFee)
+	fmt.Printf("Burned anti-spam fee (id %s) and waiting for confirmations.\n", antiSpamID.Text(10))
+	for {
+		confs, err := mockChain.CheckAntiSpamConfirmations(*antiSpamID, nonBindingOffer.AntiSpamFee)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	offer, err = atomicSwap.RequestBindingOffer(*antiSpamID, time.Now())
+		fmt.Printf("%d/%d", confs, antiSpamConfirmations)
+		if confs > antiSpamConfirmations {
+			fmt.Printf("... ")
+			time.Sleep(10 * time.Second)
+		} else {
+			fmt.Printf("\n")
+			break
+		}
+	}
+
+	bindingOffer, err := atomicSwap.RequestBindingOffer(*antiSpamID, time.Now())
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(offer)
+	fmt.Println(bindingOffer)
+
+	if bindingOffer.Ether.Cmp(&nonBindingOffer.Ether) != 0 {
+		_, err = consoleFrontend.ApproveOffer(oneSiacoin, *bindingOffer, true)
+	}
 
 	aliceKeypair, err := keypair.Generate()
 	if err != nil {

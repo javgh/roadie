@@ -25,6 +25,8 @@ const (
 	defaultClientAddress  = "localhost:9980"
 	defaultPasswordFile   = ".sia/apipassword"
 	antiSpamConfirmations = 10
+	minTimelockOffset     = 1
+	//minTimelockOffset     = types.BlockHeight(24 - 2) // 24 blocks (~ 4 hours) with some leeway
 )
 
 var (
@@ -149,7 +151,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(bindingOffer)
 
 	if bindingOffer.Ether.Cmp(&nonBindingOffer.Ether) != 0 {
 		_, err = consoleFrontend.ApproveOffer(oneSiacoin, *bindingOffer, true)
@@ -165,6 +166,16 @@ func main() {
 		log.Fatal(err)
 	}
 
+	height, err := siaChain.Height()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	minTimelock := *height + minTimelockOffset
+	if refundDetails.Timelock < minTimelock {
+		log.Fatal("proposed timelock is too short")
+	}
+
 	jointPubKey, _ /* jointPrimeKeys */, err := ed25519.GenerateJointKey(
 		[]ed25519.PublicKey{aliceKeypair.PubKey, refundDetails.BobPubKey})
 	if err != nil {
@@ -176,10 +187,6 @@ func main() {
 		refundDetails.FundingOutputID, jointUnlockConditions, refundDetails.BobRefundUnlockHash,
 		oneSiacoin, defaultMinerFee, refundDetails.Timelock)
 
-	height, err := siaChain.Height()
-	if err != nil {
-		log.Fatal(err)
-	}
 	refundSigHash := sia.WholeSigHash(refundTx, *height)
 	aliceRefundNoncePoint := ed25519.GenerateNoncePoint(aliceKeypair.PrivKey, refundSigHash)
 	refundSigAlice, err := keypair.JointSignAlice(aliceKeypair, refundDetails.BobPubKey,

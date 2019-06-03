@@ -19,7 +19,7 @@ type (
 		httpClient client.Client
 	}
 
-	NoBroadcastBlockchain struct {
+	DryRunBlockchain struct {
 		chain HTTPAPIBlockchain
 	}
 
@@ -29,12 +29,17 @@ type (
 		Height() (*types.BlockHeight, error)
 		WalletSign(tx types.Transaction) (*types.Transaction, error)
 		BroadcastTransaction(tx types.Transaction) error
+		ConfsOfRecentUnlockHash(unlockHash types.UnlockHash, value types.Currency) (int, error)
 	}
 
 	UsableOutput struct {
 		UnspentOutput    modules.UnspentOutput
 		UnlockConditions types.UnlockConditions
 	}
+)
+
+const (
+	recentBlocks = 6
 )
 
 var (
@@ -114,29 +119,60 @@ func (c *HTTPAPIBlockchain) BroadcastTransaction(tx types.Transaction) error {
 	return c.httpClient.TransactionPoolRawPost(tx, []types.Transaction{})
 }
 
-func NewNoBroadcastBlockchain(chain HTTPAPIBlockchain) NoBroadcastBlockchain {
-	return NoBroadcastBlockchain{chain: chain}
+func (c *HTTPAPIBlockchain) ConfsOfRecentUnlockHash(unlockHash types.UnlockHash, value types.Currency) (int, error) {
+	currentHeight, err := c.Height()
+	if err != nil {
+		return 0, err
+	}
+
+	for offset := 0; offset < recentBlocks; offset += 1 {
+		height := *currentHeight - types.BlockHeight(offset)
+
+		result, err := c.httpClient.ConsensusBlocksHeightGet(height)
+		if err != nil {
+			return 0, err
+		}
+
+		for _, tx := range result.Transactions {
+			for _, output := range tx.SiacoinOutputs {
+				if output.UnlockHash == unlockHash && output.Value.Cmp(value) == 0 {
+					confs := int(*currentHeight - height + 1)
+					return confs, nil
+				}
+			}
+		}
+	}
+
+	return 0, nil
 }
 
-func (c *NoBroadcastBlockchain) FetchUsableOutputs() ([]UsableOutput, error) {
+func NewDryRunBlockchain(chain HTTPAPIBlockchain) DryRunBlockchain {
+	return DryRunBlockchain{chain: chain}
+}
+
+func (c *DryRunBlockchain) FetchUsableOutputs() ([]UsableOutput, error) {
 	return c.chain.FetchUsableOutputs()
 }
 
-func (c *NoBroadcastBlockchain) NextWalletUnlockHash() (*types.UnlockHash, error) {
+func (c *DryRunBlockchain) NextWalletUnlockHash() (*types.UnlockHash, error) {
 	return c.chain.NextWalletUnlockHash()
 }
 
-func (c *NoBroadcastBlockchain) Height() (*types.BlockHeight, error) {
+func (c *DryRunBlockchain) Height() (*types.BlockHeight, error) {
 	return c.chain.Height()
 }
 
-func (c *NoBroadcastBlockchain) WalletSign(tx types.Transaction) (*types.Transaction, error) {
+func (c *DryRunBlockchain) WalletSign(tx types.Transaction) (*types.Transaction, error) {
 	return c.chain.WalletSign(tx)
 }
 
-func (c *NoBroadcastBlockchain) BroadcastTransaction(tx types.Transaction) error {
+func (c *DryRunBlockchain) BroadcastTransaction(tx types.Transaction) error {
 	fmt.Printf("Skipping broadcast for: %s\n", EncodeTransaction(tx))
 	return nil
+}
+
+func (c *DryRunBlockchain) ConfsOfRecentUnlockHash(unlockHash types.UnlockHash, value types.Currency) (int, error) {
+	return recentBlocks, nil
 }
 
 func PubKeyUnlockConditions(pubKey ed25519.PublicKey) types.UnlockConditions {

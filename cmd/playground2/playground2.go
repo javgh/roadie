@@ -27,6 +27,7 @@ const (
 	antiSpamConfirmations = 10
 	minTimelockOffset     = 1
 	//minTimelockOffset     = types.BlockHeight(24 - 2) // 24 blocks (~ 4 hours) with some leeway
+	fundingConfirmations = 3
 )
 
 var (
@@ -38,7 +39,14 @@ var (
 	bindingOfferLifetime, _ = time.ParseDuration("1m")
 )
 
-type mockTrader struct{}
+type (
+	mockTrader struct{}
+
+	confirmationDisplay struct {
+		current int
+		total   int
+	}
+)
 
 func (mt *mockTrader) PrepareNonBindingOffer(siacoin types.Currency, minerFee types.Currency) (*trader.Offer, error) {
 	offer := trader.Offer{
@@ -88,6 +96,18 @@ func (mc *mockChain) ClaimDeposit(adaptorPubKey ed25519.CurvePoint, adaptorPrivK
 	return nil
 }
 
+func (d *confirmationDisplay) show(current int) {
+	if d.current == current {
+		return
+	}
+
+	d.current = current
+	fmt.Printf("%d/%d", d.current, d.total)
+	if d.current < d.total {
+		fmt.Printf("... ")
+	}
+}
+
 func prependHomeDirectory(path string) string {
 	currentUser, err := user.Current()
 	if err != nil {
@@ -107,12 +127,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	nbSiaChain := sia.NewNoBroadcastBlockchain(*siaChain)
+	drSiaChain := sia.NewDryRunBlockchain(*siaChain)
 
 	mockTrader := mockTrader{}
 	mockChain := mockChain{}
 	blacklist := bob.NewBlacklist()
-	atomicSwap := bob.NewAtomicSwap(&mockTrader, &mockChain, &nbSiaChain, blacklist, time.Now())
+	atomicSwap := bob.NewAtomicSwap(&mockTrader, &mockChain, &drSiaChain, blacklist, time.Now())
 
 	nonBindingOffer, err := atomicSwap.RequestNonBindingOffer(oneSiacoin)
 	if err != nil {
@@ -131,15 +151,15 @@ func main() {
 	}
 	mockChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer.AntiSpamFee)
 	fmt.Printf("Burned anti-spam fee (id %s) and waiting for confirmations.\n", antiSpamID.Text(10))
+	confDisplay := confirmationDisplay{current: -1, total: antiSpamConfirmations}
 	for {
 		confs, err := mockChain.CheckAntiSpamConfirmations(*antiSpamID, nonBindingOffer.AntiSpamFee)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("%d/%d", confs, antiSpamConfirmations)
-		if confs > antiSpamConfirmations {
-			fmt.Printf("... ")
+		confDisplay.show(confs)
+		if confs < antiSpamConfirmations {
 			time.Sleep(10 * time.Second)
 		} else {
 			fmt.Printf("\n")
@@ -199,7 +219,23 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(fundingTxID)
+
+	fmt.Printf("Waiting for confirmations for funding transaction %s .\n", fundingTxID)
+	confDisplay = confirmationDisplay{current: -1, total: fundingConfirmations}
+	for {
+		confs, err := drSiaChain.ConfsOfRecentUnlockHash(jointUnlockConditions.UnlockHash(), oneSiacoin.Add(defaultMinerFee))
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		confDisplay.show(confs)
+		if confs < fundingConfirmations {
+			time.Sleep(10 * time.Second)
+		} else {
+			fmt.Printf("\n")
+			break
+		}
+	}
 
 	aliceClaimUnlockHash, err := siaChain.NextWalletUnlockHash()
 	if err != nil {

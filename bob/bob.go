@@ -278,7 +278,10 @@ func (s *AtomicSwap) EnableFunding(aliceRefundNoncePoint ed25519.CurvePoint, ref
 		return nil, err
 	}
 	s.fundingTx = *fundingTxSigned
-	s.siaChain.BroadcastTransaction(s.fundingTx)
+	err = s.siaChain.BroadcastTransaction(s.fundingTx)
+	if err != nil {
+		return nil, err
+	}
 	fundingTxID := s.fundingTx.ID()
 
 	s.state = stateFunded

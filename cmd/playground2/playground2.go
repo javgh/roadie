@@ -28,7 +28,7 @@ const (
 	depositConfirmations  = 10
 	minTimelockOffset     = 1
 	//minTimelockOffset     = types.BlockHeight(24 - 2) // 24 blocks (~ 4 hours) with some leeway
-	fundingConfirmations = 3
+	fundingConfirmations = 1 //3
 )
 
 var (
@@ -99,6 +99,10 @@ func (mc *mockChain) CheckDepositConfirmations(adaptorPubKey ed25519.CurvePoint,
 func (mc *mockChain) ClaimDeposit(adaptorPubKey ed25519.CurvePoint, adaptorPrivKey ed25519.Adaptor) error {
 	mc.adaptorPrivKey = adaptorPrivKey
 	return nil
+}
+
+func (mc *mockChain) LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) (bool, ed25519.Adaptor, error) {
+	return true, mc.adaptorPrivKey, nil
 }
 
 func (d *confirmationDisplay) show(current int) {
@@ -237,7 +241,7 @@ func main() {
 		if confs < fundingConfirmations {
 			time.Sleep(10 * time.Second)
 		} else {
-			fmt.Printf("\n")
+			fmt.Printf("\n\n")
 			break
 		}
 	}
@@ -278,7 +282,7 @@ func main() {
 		if confs < depositConfirmations {
 			time.Sleep(10 * time.Second)
 		} else {
-			fmt.Printf("\n")
+			fmt.Printf("\n\n")
 			break
 		}
 	}
@@ -288,6 +292,22 @@ func main() {
 		log.Fatal(err)
 	}
 
+	fmt.Printf("Waiting for other party to claim deposit and reveal adaptor secret.\n")
+	var ok bool
+	var adaptorPrivKey ed25519.Adaptor
+	for {
+		ok, adaptorPrivKey, err = mockChain.LookupAdaptorPrivKey(adaptorDetails.AdaptorPubKey)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if ok {
+			break
+		}
+	}
+
+	fmt.Printf("Using adaptor secret to build a valid claim transaction and broadcast it.\n")
+
 	noncePoints := []ed25519.CurvePoint{aliceClaimNoncePoint, adaptorDetails.BobClaimNoncePoint}
 	adaptorSigAlice, err := keypair.JointSignWithAdaptorAlice(
 		aliceKeypair, refundDetails.BobPubKey, noncePoints, adaptorDetails.AdaptorPubKey, claimSigHash)
@@ -296,13 +316,18 @@ func main() {
 	}
 
 	claimSig := ed25519.AddSignature(adaptorSigAlice, adaptorDetails.AdaptorSigBob)
-	claimSig = ed25519.AddSignature(claimSig, append(adaptorDetails.AdaptorPubKey, mockChain.adaptorPrivKey...))
+	claimSig = ed25519.AddSignature(claimSig, append(adaptorDetails.AdaptorPubKey, adaptorPrivKey...))
 
 	claimSigOK := ed25519.Verify(jointPubKey, claimSigHash, claimSig)
-	fmt.Println("Claim sig ok:", claimSigOK)
+	if !claimSigOK {
+		log.Fatal("unable to use adaptor secret to build a valid claim transaction - we were tricked somehow")
+	}
 
 	claimTx = sia.AddSignature(claimTx, claimSig)
-	fmt.Printf("Claim: %s\n", sia.EncodeTransaction(claimTx))
+	err = drSiaChain.BroadcastTransaction(claimTx)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	atomicSwap.Rollback()
 }

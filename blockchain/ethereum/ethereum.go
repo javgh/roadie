@@ -21,6 +21,7 @@ type Blockchain interface {
 	DepositEther(adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) error
 	CheckDepositConfirmations(adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) (int, error)
 	ClaimDeposit(adaptorPubKey ed25519.CurvePoint, adaptorPrivKey ed25519.Adaptor) error
+	LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) (bool, ed25519.Adaptor, error)
 }
 
 func FormatEther(ether *big.Int) string {

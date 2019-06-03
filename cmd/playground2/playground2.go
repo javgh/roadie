@@ -113,7 +113,7 @@ func (d *confirmationDisplay) show(current int) {
 	d.current = current
 	fmt.Printf("%d/%d", d.current, d.total)
 	if d.current < d.total {
-		fmt.Printf("... ")
+		fmt.Printf(".. ")
 	}
 }
 

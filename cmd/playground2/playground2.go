@@ -25,6 +25,7 @@ const (
 	defaultClientAddress  = "localhost:9980"
 	defaultPasswordFile   = ".sia/apipassword"
 	antiSpamConfirmations = 10
+	depositConfirmations  = 10
 	minTimelockOffset     = 1
 	//minTimelockOffset     = types.BlockHeight(24 - 2) // 24 blocks (~ 4 hours) with some leeway
 	fundingConfirmations = 3
@@ -87,8 +88,12 @@ func (mc *mockChain) CheckAntiSpamConfirmations(antiSpamID big.Int, antiSpamFee 
 	return antiSpamConfirmations, nil
 }
 
-func (mc *mockChain) CheckDeposit(adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) (bool, error) {
-	return true, nil
+func (mc *mockChain) DepositEther(adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) error {
+	return nil
+}
+
+func (mc *mockChain) CheckDepositConfirmations(adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) (int, error) {
+	return depositConfirmations, nil
 }
 
 func (mc *mockChain) ClaimDeposit(adaptorPubKey ed25519.CurvePoint, adaptorPrivKey ed25519.Adaptor) error {
@@ -196,7 +201,7 @@ func main() {
 		log.Fatal("proposed timelock is too short")
 	}
 
-	jointPubKey, _ /* jointPrimeKeys */, err := ed25519.GenerateJointKey(
+	jointPubKey, jointPrimeKeys, err := ed25519.GenerateJointKey(
 		[]ed25519.PublicKey{aliceKeypair.PubKey, refundDetails.BobPubKey})
 	if err != nil {
 		log.Fatal(err)
@@ -252,6 +257,32 @@ func main() {
 		log.Fatal(err)
 	}
 
+	adaptorSigOK := keypair.VerifyBobsAdaptorSignature(
+		jointPrimeKeys, jointPubKey, []ed25519.CurvePoint{aliceClaimNoncePoint, adaptorDetails.BobClaimNoncePoint},
+		adaptorDetails.AdaptorPubKey, claimSigHash, adaptorDetails.AdaptorSigBob)
+	if !adaptorSigOK {
+		log.Fatal("unable to verify adaptor signature")
+	}
+
+	mockChain.DepositEther(adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
+	fmt.Printf("Deposited payment and waiting for confirmations.\n")
+	confDisplay = confirmationDisplay{current: -1, total: depositConfirmations}
+	for {
+		confs, err := mockChain.CheckDepositConfirmations(
+			adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		confDisplay.show(confs)
+		if confs < depositConfirmations {
+			time.Sleep(10 * time.Second)
+		} else {
+			fmt.Printf("\n")
+			break
+		}
+	}
+
 	err = atomicSwap.AnnounceDeposit()
 	if err != nil {
 		log.Fatal(err)
@@ -267,8 +298,8 @@ func main() {
 	claimSig := ed25519.AddSignature(adaptorSigAlice, adaptorDetails.AdaptorSigBob)
 	claimSig = ed25519.AddSignature(claimSig, append(adaptorDetails.AdaptorPubKey, mockChain.adaptorPrivKey...))
 
-	claimSigOk := ed25519.Verify(jointPubKey, claimSigHash, claimSig)
-	fmt.Println("Claim sig ok:", claimSigOk)
+	claimSigOK := ed25519.Verify(jointPubKey, claimSigHash, claimSig)
+	fmt.Println("Claim sig ok:", claimSigOK)
 
 	claimTx = sia.AddSignature(claimTx, claimSig)
 	fmt.Printf("Claim: %s\n", sia.EncodeTransaction(claimTx))

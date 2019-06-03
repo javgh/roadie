@@ -74,6 +74,7 @@ const (
 
 	timelockOffset        = types.BlockHeight(1)
 	antiSpamConfirmations = 8
+	depositConfirmations  = 8
 )
 
 var (
@@ -266,8 +267,8 @@ func (s *AtomicSwap) EnableFunding(aliceRefundNoncePoint ed25519.CurvePoint, ref
 	}
 	refundSig := ed25519.AddSignature(refundSigAlice, refundSigBob)
 
-	refundSigOk := ed25519.Verify(s.jointPubKey, refundSigHash, refundSig)
-	if !refundSigOk {
+	refundSigOK := ed25519.Verify(s.jointPubKey, refundSigHash, refundSig)
+	if !refundSigOK {
 		return nil, ErrInvalidRefundSig
 	}
 	s.refundTx = sia.AddSignature(s.refundTx, refundSig)
@@ -329,12 +330,12 @@ func (s *AtomicSwap) AnnounceDeposit() error {
 		return ErrWrongState
 	}
 
-	ok, err := s.ethChain.CheckDeposit(s.adaptorPubKey, s.ether, s.antiSpamID)
+	confs, err := s.ethChain.CheckDepositConfirmations(s.adaptorPubKey, s.ether, s.antiSpamID)
 	if err != nil {
 		return err
 	}
 
-	if !ok {
+	if confs < depositConfirmations {
 		return ErrInvalidDeposit
 	}
 

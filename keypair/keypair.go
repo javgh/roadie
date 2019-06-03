@@ -69,3 +69,10 @@ func JointSignWithAdaptorAlice(aliceKeypair Keypair, bobPubKey ed25519.PublicKey
 	return ed25519.JointSignWithAdaptor(
 		aliceKeypair.PrivKey, jointPrivateKey, noncePoints[0], noncePoints[1], adaptorPubKey, msg), nil
 }
+
+func VerifyBobsAdaptorSignature(jointPrimeKeys []ed25519.PublicKey, jointPubKey ed25519.PublicKey,
+	noncePoints []ed25519.CurvePoint, adaptorPubKey ed25519.CurvePoint, msg []byte, sig []byte) bool {
+	bobPrimeKey := jointPrimeKeys[1]
+	return ed25519.VerifyAdaptorSignature(
+		bobPrimeKey, jointPubKey, noncePoints[0], noncePoints[1], adaptorPubKey, msg, sig)
+}

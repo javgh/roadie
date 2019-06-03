@@ -18,7 +18,8 @@ var (
 type Blockchain interface {
 	BurnAntiSpamFee(antiSpamID big.Int, antiSpamFee big.Int) error
 	CheckAntiSpamConfirmations(antiSpamID big.Int, antiSpamFee big.Int) (int, error)
-	CheckDeposit(adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) (bool, error)
+	DepositEther(adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) error
+	CheckDepositConfirmations(adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) (int, error)
 	ClaimDeposit(adaptorPubKey ed25519.CurvePoint, adaptorPrivKey ed25519.Adaptor) error
 }
 

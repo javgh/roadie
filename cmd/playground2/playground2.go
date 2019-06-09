@@ -226,7 +226,7 @@ func main() {
 		log.Fatal(err)
 	}
 	ethChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer.AntiSpamFee)
-	fmt.Printf("Burned anti-spam fee (id %s) and waiting for confirmations.\n", antiSpamID.Text(10))
+	fmt.Printf("Burned anti-spam fee (id %s) and waiting for Ethereum confirmations.\n", antiSpamID.Text(10))
 	confDisplay := confirmationDisplay{current: -1, total: antiSpamConfirmations}
 	for {
 		confs, err := ethChain.CheckAntiSpamConfirmations(*antiSpamID, nonBindingOffer.AntiSpamFee)
@@ -296,7 +296,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Waiting for confirmations for funding transaction %s .\n", fundingTxID)
+	fmt.Printf("Waiting for Sia confirmations for funding transaction %s .\n", fundingTxID)
 	confDisplay = confirmationDisplay{current: -1, total: fundingConfirmations}
 	for {
 		confs, err := drSiaChain.ConfsOfRecentUnlockHash(jointUnlockConditions.UnlockHash(), oneSiacoin.Add(defaultMinerFee))
@@ -336,7 +336,7 @@ func main() {
 	}
 
 	ethChain.DepositEther(adaptorDetails.DepositRecipient, adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
-	fmt.Printf("Deposited payment and waiting for confirmations.\n")
+	fmt.Printf("Deposited payment and waiting for Ethereum confirmations.\n")
 	confDisplay = confirmationDisplay{current: -1, total: depositConfirmations}
 	for {
 		confs, err := ethChain.CheckDepositConfirmations(
@@ -397,6 +397,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	fmt.Printf("Swap successfully completed with Sia claim transaction %s .\n", claimTx.ID())
 
 	atomicSwap.Rollback()
 }

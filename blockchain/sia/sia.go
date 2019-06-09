@@ -29,7 +29,7 @@ type (
 		Height() (*types.BlockHeight, error)
 		WalletSign(tx types.Transaction) (*types.Transaction, error)
 		BroadcastTransaction(tx types.Transaction) error
-		ConfsOfRecentUnlockHash(unlockHash types.UnlockHash, value types.Currency) (int, error)
+		ConfsOfRecentUnlockHash(unlockHash types.UnlockHash, value types.Currency) (int64, error)
 	}
 
 	UsableOutput struct {
@@ -119,7 +119,7 @@ func (c *HTTPAPIBlockchain) BroadcastTransaction(tx types.Transaction) error {
 	return c.httpClient.TransactionPoolRawPost(tx, []types.Transaction{})
 }
 
-func (c *HTTPAPIBlockchain) ConfsOfRecentUnlockHash(unlockHash types.UnlockHash, value types.Currency) (int, error) {
+func (c *HTTPAPIBlockchain) ConfsOfRecentUnlockHash(unlockHash types.UnlockHash, value types.Currency) (int64, error) {
 	currentHeight, err := c.Height()
 	if err != nil {
 		return 0, err
@@ -136,7 +136,7 @@ func (c *HTTPAPIBlockchain) ConfsOfRecentUnlockHash(unlockHash types.UnlockHash,
 		for _, tx := range result.Transactions {
 			for _, output := range tx.SiacoinOutputs {
 				if output.UnlockHash == unlockHash && output.Value.Cmp(value) == 0 {
-					confs := int(*currentHeight - height + 1)
+					confs := int64(*currentHeight - height + 1)
 					return confs, nil
 				}
 			}
@@ -171,7 +171,7 @@ func (c *DryRunBlockchain) BroadcastTransaction(tx types.Transaction) error {
 	return nil
 }
 
-func (c *DryRunBlockchain) ConfsOfRecentUnlockHash(unlockHash types.UnlockHash, value types.Currency) (int, error) {
+func (c *DryRunBlockchain) ConfsOfRecentUnlockHash(unlockHash types.UnlockHash, value types.Currency) (int64, error) {
 	return recentBlocks, nil
 }
 

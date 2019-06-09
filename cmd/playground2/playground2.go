@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"fmt"
 	"io/ioutil"
@@ -12,9 +13,11 @@ import (
 	"time"
 
 	"github.com/HyperspaceApp/ed25519"
+	"github.com/ethereum/go-ethereum/common"
 	"gitlab.com/NebulousLabs/Sia/types"
 
 	"github.com/javgh/roadie/alice"
+	"github.com/javgh/roadie/blockchain/ethereum"
 	"github.com/javgh/roadie/blockchain/sia"
 	"github.com/javgh/roadie/bob"
 	"github.com/javgh/roadie/keypair"
@@ -29,6 +32,8 @@ const (
 	minTimelockOffset     = 1
 	//minTimelockOffset     = types.BlockHeight(24 - 2) // 24 blocks (~ 4 hours) with some leeway
 	fundingConfirmations = 1 //3
+	ganacheEndpoint      = "http://127.0.0.1:8545"
+	ganachePrivKey       = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
 )
 
 var (
@@ -38,14 +43,15 @@ var (
 	defaultAntiSpamFee      = finney
 	maxAntiSpamID           = new(big.Int).Exp(big.NewInt(2), big.NewInt(64), nil)
 	bindingOfferLifetime, _ = time.ParseDuration("1m")
+	mockWalletAddress       = common.HexToAddress("0x0000000000000000000000000000000000000000")
 )
 
 type (
 	mockTrader struct{}
 
 	confirmationDisplay struct {
-		current int
-		total   int
+		current int64
+		total   int64
 	}
 )
 
@@ -84,28 +90,34 @@ func (mc *mockChain) BurnAntiSpamFee(antiSpamID big.Int, antiSpamFee big.Int) er
 	return nil
 }
 
-func (mc *mockChain) CheckAntiSpamConfirmations(antiSpamID big.Int, antiSpamFee big.Int) (int, error) {
+func (mc *mockChain) CheckAntiSpamConfirmations(antiSpamID big.Int, antiSpamFee big.Int) (int64, error) {
 	return antiSpamConfirmations, nil
 }
 
-func (mc *mockChain) DepositEther(adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) error {
+func (mc *mockChain) DepositEther(
+	recipient common.Address, adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) error {
 	return nil
 }
 
-func (mc *mockChain) CheckDepositConfirmations(adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) (int, error) {
+func (mc *mockChain) CheckDepositConfirmations(
+	recipient common.Address, adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) (int64, error) {
 	return depositConfirmations, nil
 }
 
-func (mc *mockChain) ClaimDeposit(adaptorPubKey ed25519.CurvePoint, adaptorPrivKey ed25519.Adaptor) error {
+func (mc *mockChain) ClaimDeposit(adaptorPrivKey ed25519.Adaptor, antiSpamID big.Int) error {
 	mc.adaptorPrivKey = adaptorPrivKey
 	return nil
 }
 
-func (mc *mockChain) LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) (bool, ed25519.Adaptor, error) {
-	return true, mc.adaptorPrivKey, nil
+func (mc *mockChain) LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) (bool, *ed25519.Adaptor, error) {
+	return true, &mc.adaptorPrivKey, nil
 }
 
-func (d *confirmationDisplay) show(current int) {
+func (mc *mockChain) WalletAddress() common.Address {
+	return mockWalletAddress
+}
+
+func (d *confirmationDisplay) show(current int64) {
 	if d.current == current {
 		return
 	}
@@ -125,12 +137,68 @@ func prependHomeDirectory(path string) string {
 	return filepath.Join(currentUser.HomeDir, path)
 }
 
+func main2() {
+	ethChain, err := ethereum.NewJSONRPCBlockchain(ganacheEndpoint, ganachePrivKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	antiSpamID, err := rand.Int(rand.Reader, maxAntiSpamID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = ethChain.BurnAntiSpamFee(*antiSpamID, *defaultAntiSpamFee)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	confs, err := ethChain.CheckAntiSpamConfirmations(*antiSpamID, *defaultAntiSpamFee)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(confs)
+
+	adaptorPrivKey, adaptorPubKey, err := ed25519.GenerateAdaptor(rand.Reader)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	depositRecipient := ethChain.WalletAddress()
+	err = ethChain.DepositEther(depositRecipient, adaptorPubKey, *finney, *antiSpamID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	confs, err = ethChain.CheckDepositConfirmations(depositRecipient, adaptorPubKey, *finney, *antiSpamID)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(confs)
+
+	err = ethChain.ClaimDeposit(adaptorPrivKey, *antiSpamID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ok, adaptorPrivKey2, err := ethChain.LookupAdaptorPrivKey(adaptorPubKey)
+	fmt.Println(ok, adaptorPrivKey2)
+	if ok {
+		fmt.Println(bytes.Compare(adaptorPrivKey, *adaptorPrivKey2))
+	}
+}
+
 func main() {
 	passwordBytes, err := ioutil.ReadFile(prependHomeDirectory(defaultPasswordFile))
 	if err != nil {
 		log.Fatal(err)
 	}
 	password := strings.TrimSpace(string(passwordBytes))
+
+	ethChain, err := ethereum.NewJSONRPCBlockchain(ganacheEndpoint, ganachePrivKey)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	siaChain, err := sia.NewHTTPAPIBlockchain(defaultClientAddress, password)
 	if err != nil {
@@ -139,9 +207,8 @@ func main() {
 	drSiaChain := sia.NewDryRunBlockchain(*siaChain)
 
 	mockTrader := mockTrader{}
-	mockChain := mockChain{}
 	blacklist := bob.NewBlacklist()
-	atomicSwap := bob.NewAtomicSwap(&mockTrader, &mockChain, &drSiaChain, blacklist, time.Now())
+	atomicSwap := bob.NewAtomicSwap(&mockTrader, ethChain, &drSiaChain, blacklist, time.Now())
 
 	nonBindingOffer, err := atomicSwap.RequestNonBindingOffer(oneSiacoin)
 	if err != nil {
@@ -158,11 +225,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	mockChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer.AntiSpamFee)
+	ethChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer.AntiSpamFee)
 	fmt.Printf("Burned anti-spam fee (id %s) and waiting for confirmations.\n", antiSpamID.Text(10))
 	confDisplay := confirmationDisplay{current: -1, total: antiSpamConfirmations}
 	for {
-		confs, err := mockChain.CheckAntiSpamConfirmations(*antiSpamID, nonBindingOffer.AntiSpamFee)
+		confs, err := ethChain.CheckAntiSpamConfirmations(*antiSpamID, nonBindingOffer.AntiSpamFee)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -268,12 +335,12 @@ func main() {
 		log.Fatal("unable to verify adaptor signature")
 	}
 
-	mockChain.DepositEther(adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
+	ethChain.DepositEther(adaptorDetails.DepositRecipient, adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
 	fmt.Printf("Deposited payment and waiting for confirmations.\n")
 	confDisplay = confirmationDisplay{current: -1, total: depositConfirmations}
 	for {
-		confs, err := mockChain.CheckDepositConfirmations(
-			adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
+		confs, err := ethChain.CheckDepositConfirmations(
+			adaptorDetails.DepositRecipient, adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -294,14 +361,16 @@ func main() {
 
 	fmt.Printf("Waiting for other party to claim deposit and reveal adaptor secret.\n")
 	var ok bool
-	var adaptorPrivKey ed25519.Adaptor
+	var adaptorPrivKey *ed25519.Adaptor
 	for {
-		ok, adaptorPrivKey, err = mockChain.LookupAdaptorPrivKey(adaptorDetails.AdaptorPubKey)
+		ok, adaptorPrivKey, err = ethChain.LookupAdaptorPrivKey(adaptorDetails.AdaptorPubKey)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		if ok {
+		if !ok {
+			time.Sleep(10 * time.Second)
+		} else {
 			break
 		}
 	}
@@ -316,7 +385,7 @@ func main() {
 	}
 
 	claimSig := ed25519.AddSignature(adaptorSigAlice, adaptorDetails.AdaptorSigBob)
-	claimSig = ed25519.AddSignature(claimSig, append(adaptorDetails.AdaptorPubKey, adaptorPrivKey...))
+	claimSig = ed25519.AddSignature(claimSig, append(adaptorDetails.AdaptorPubKey, *adaptorPrivKey...))
 
 	claimSigOK := ed25519.Verify(jointPubKey, claimSigHash, claimSig)
 	if !claimSigOK {

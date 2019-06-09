@@ -4,6 +4,8 @@ import "./Ed25519.sol";
 
 contract Hub is Ed25519 {
     address payable constant BLACK_HOLE = 0x0000000000000000000000000000000000000000;
+    uint constant DEPOSIT_DURATION = 2 hours;
+    uint constant DEPOSIT_DURATION_MARGIN = 30 minutes;
 
     struct AntiSpamFee {
         uint fee;
@@ -11,10 +13,12 @@ contract Hub is Ed25519 {
     }
 
     struct Deposit {
+        address sender;
         address recipient;
         uint adaptorPubKey;
         uint value;
         uint blockNumber;
+        uint deadline;
     }
 
     mapping(bytes32 => AntiSpamFee) public antiSpamFees;
@@ -33,27 +37,30 @@ contract Hub is Ed25519 {
         if (antiSpamFees[hashedID].fee < fee) {
             return 0;
         } else {
-            return block.number - antiSpamFees[hashedID].blockNumber + 1;
+            return block.number - antiSpamFees[hashedID].blockNumber;
         }
     }
 
     function depositEther(address recipient, uint adaptorPubKey, bytes32 hashedAntiSpamID) external payable {
         require(deposits[hashedAntiSpamID].blockNumber == 0);
 
+        deposits[hashedAntiSpamID].sender = msg.sender;
         deposits[hashedAntiSpamID].recipient = recipient;
         deposits[hashedAntiSpamID].adaptorPubKey = adaptorPubKey;
         deposits[hashedAntiSpamID].value = msg.value;
         deposits[hashedAntiSpamID].blockNumber = block.number;
+        deposits[hashedAntiSpamID].deadline = now + DEPOSIT_DURATION;
     }
 
     function checkDepositConfirmations(address recipient, uint adaptorPubKey,
                                        uint value, bytes32 hashedAntiSpamID) external view returns (uint) {
         if (deposits[hashedAntiSpamID].recipient != recipient ||
             deposits[hashedAntiSpamID].adaptorPubKey != adaptorPubKey ||
-            deposits[hashedAntiSpamID].value < value) {
+            deposits[hashedAntiSpamID].value < value ||
+            deposits[hashedAntiSpamID].deadline - DEPOSIT_DURATION_MARGIN < now) {
             return 0;
         } else {
-            return block.number - deposits[hashedAntiSpamID].blockNumber + 1;
+            return block.number - deposits[hashedAntiSpamID].blockNumber;
         }
     }
 
@@ -65,6 +72,16 @@ contract Hub is Ed25519 {
         (, uint adaptorPubKey) = scalarmult(adaptorPrivKey);    // check via Ed25519.sol
         require(deposits[hashedAntiSpamID].adaptorPubKey == adaptorPubKey);
         adaptorPrivKeys[adaptorPubKey] = adaptorPrivKey;
+
+        uint value = deposits[hashedAntiSpamID].value;
+        delete deposits[hashedAntiSpamID];
+        delete antiSpamFees[hashedAntiSpamID];
+        msg.sender.transfer(value);
+    }
+
+    function reclaimDeposit(bytes32 hashedAntiSpamID) external {
+        require(deposits[hashedAntiSpamID].deadline < now);
+        require(deposits[hashedAntiSpamID].sender == msg.sender);
 
         uint value = deposits[hashedAntiSpamID].value;
         delete deposits[hashedAntiSpamID];

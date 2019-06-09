@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/HyperspaceApp/ed25519"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/patrickmn/go-cache"
 	"github.com/satori/go.uuid"
 	"gitlab.com/NebulousLabs/Sia/types"
@@ -59,6 +60,7 @@ type (
 		BobClaimNoncePoint ed25519.CurvePoint
 		AdaptorPubKey      ed25519.CurvePoint
 		AdaptorSigBob      []byte
+		DepositRecipient   common.Address
 	}
 )
 
@@ -318,10 +320,12 @@ func (s *AtomicSwap) RequestAdaptorDetails(aliceClaimUnlockHash types.UnlockHash
 		return nil, err
 	}
 
+	depositRecipient := s.ethChain.WalletAddress()
 	adaptorDetails := AdaptorDetails{
 		BobClaimNoncePoint: bobClaimNoncePoint,
 		AdaptorPubKey:      s.adaptorPubKey,
 		AdaptorSigBob:      adaptorSigBob,
+		DepositRecipient:   depositRecipient,
 	}
 
 	s.state = stateProvidedAdaptorDetails
@@ -333,7 +337,8 @@ func (s *AtomicSwap) AnnounceDeposit() error {
 		return ErrWrongState
 	}
 
-	confs, err := s.ethChain.CheckDepositConfirmations(s.adaptorPubKey, s.ether, s.antiSpamID)
+	depositRecipient := s.ethChain.WalletAddress()
+	confs, err := s.ethChain.CheckDepositConfirmations(depositRecipient, s.adaptorPubKey, s.ether, s.antiSpamID)
 	if err != nil {
 		return err
 	}
@@ -342,7 +347,7 @@ func (s *AtomicSwap) AnnounceDeposit() error {
 		return ErrInvalidDeposit
 	}
 
-	err = s.ethChain.ClaimDeposit(s.adaptorPubKey, s.adaptorPrivKey)
+	err = s.ethChain.ClaimDeposit(s.adaptorPrivKey, s.antiSpamID)
 	if err != nil {
 		return err
 	}

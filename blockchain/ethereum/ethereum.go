@@ -4,15 +4,17 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 
 	"github.com/HyperspaceApp/ed25519"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
-	"github.com/javgh/roadie/contract/hub"
+	contract "github.com/javgh/roadie/contract/hub"
 )
 
 const (
@@ -20,6 +22,8 @@ const (
 	smallGasLimit        = 100000
 	mediumGasLimit       = 200000
 	largeGasLimit        = 1500000
+	ganacheEndpoint      = "http://127.0.0.1:8545"
+	ganachePrivKey       = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
 )
 
 var (
@@ -33,7 +37,7 @@ type (
 		client        ethclient.Client
 		privKey       ecdsa.PrivateKey
 		walletAddress common.Address
-		hub           hub.Hub
+		hub           contract.Hub
 	}
 
 	Blockchain interface {
@@ -47,13 +51,13 @@ type (
 	}
 )
 
-func NewJSONRPCBlockchain(endpoint string, privKey string) (*JSONRPCBlockchain, error) {
-	client, err := ethclient.Dial(endpoint)
+func NewGanacheBlockchain() (*JSONRPCBlockchain, error) {
+	client, err := ethclient.Dial(ganacheEndpoint)
 	if err != nil {
 		return nil, err
 	}
 
-	privKeyECDSA, err := crypto.HexToECDSA(privKey)
+	privKeyECDSA, err := crypto.HexToECDSA(ganachePrivKey)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +70,7 @@ func NewJSONRPCBlockchain(endpoint string, privKey string) (*JSONRPCBlockchain, 
 	walletAddress := crypto.PubkeyToAddress(*pubKeyECDSA)
 
 	auth := bind.NewKeyedTransactor(privKeyECDSA)
-	_, _, hub, err := hub.DeployHub(auth, client)
+	_, _, hub, err := contract.DeployHub(auth, client)
 	if err != nil {
 		return nil, err
 	}
@@ -75,6 +79,50 @@ func NewJSONRPCBlockchain(endpoint string, privKey string) (*JSONRPCBlockchain, 
 		client:        *client,
 		privKey:       *privKeyECDSA,
 		walletAddress: walletAddress,
+		hub:           *hub,
+	}
+	return &c, nil
+}
+
+func NewJSONRPCBlockchain(endpoint string, keystoreFile string, contractAddress *common.Address) (*JSONRPCBlockchain, error) {
+	client, err := ethclient.Dial(endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	json, err := ioutil.ReadFile(keystoreFile)
+	if err != nil {
+		return nil, err
+	}
+
+	key, err := keystore.DecryptKey(json, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var hub *contract.Hub
+	if contractAddress != nil {
+		hub, err = contract.NewHub(*contractAddress, client)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		auth := bind.NewKeyedTransactor(key.PrivateKey)
+
+		//gwei := new(big.Int).Mul(big.NewInt(5), big.NewInt(1e9))
+		//auth.Nonce = big.NewInt(0)
+		//auth.GasPrice = gwei
+
+		_, _, hub, err = contract.DeployHub(auth, client)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	c := JSONRPCBlockchain{
+		client:        *client,
+		privKey:       *key.PrivateKey,
+		walletAddress: key.Address,
 		hub:           *hub,
 	}
 	return &c, nil
@@ -161,7 +209,7 @@ func (c *JSONRPCBlockchain) LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoin
 	}
 
 	if adaptorPrivKeyBigInt.Cmp(big.NewInt(0)) == 0 {
-		return false, nil, err
+		return false, nil, nil
 	}
 
 	adaptorPrivKey := ed25519.Adaptor(switchEndianness(adaptorPrivKeyBigInt.Bytes()))

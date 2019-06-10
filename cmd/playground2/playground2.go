@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"fmt"
 	"io/ioutil"
@@ -32,18 +31,19 @@ const (
 	minTimelockOffset     = 1
 	//minTimelockOffset     = types.BlockHeight(24 - 2) // 24 blocks (~ 4 hours) with some leeway
 	fundingConfirmations = 1 //3
-	ganacheEndpoint      = "http://127.0.0.1:8545"
-	ganachePrivKey       = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
+	jsonRPCEndpoint      = ".ethereum/geth.ipc"
+	jsonRPCKeystoreFile  = ".config/roadie/keystore"
 )
 
 var (
 	oneSiacoin              = types.SiacoinPrecision
 	defaultMinerFee         = oneSiacoin
 	finney                  = big.NewInt(1e15)
-	defaultAntiSpamFee      = finney
+	defaultAntiSpamFee      = big.NewInt(1e14)
 	maxAntiSpamID           = new(big.Int).Exp(big.NewInt(2), big.NewInt(64), nil)
 	bindingOfferLifetime, _ = time.ParseDuration("1m")
 	mockWalletAddress       = common.HexToAddress("0x0000000000000000000000000000000000000000")
+	contractAddress         = common.HexToAddress("0x799DF2482f589663d7754451de3FfeF4CAA439c8")
 )
 
 type (
@@ -137,57 +137,6 @@ func prependHomeDirectory(path string) string {
 	return filepath.Join(currentUser.HomeDir, path)
 }
 
-func main2() {
-	ethChain, err := ethereum.NewJSONRPCBlockchain(ganacheEndpoint, ganachePrivKey)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	antiSpamID, err := rand.Int(rand.Reader, maxAntiSpamID)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = ethChain.BurnAntiSpamFee(*antiSpamID, *defaultAntiSpamFee)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	confs, err := ethChain.CheckAntiSpamConfirmations(*antiSpamID, *defaultAntiSpamFee)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(confs)
-
-	adaptorPrivKey, adaptorPubKey, err := ed25519.GenerateAdaptor(rand.Reader)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	depositRecipient := ethChain.WalletAddress()
-	err = ethChain.DepositEther(depositRecipient, adaptorPubKey, *finney, *antiSpamID)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	confs, err = ethChain.CheckDepositConfirmations(depositRecipient, adaptorPubKey, *finney, *antiSpamID)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(confs)
-
-	err = ethChain.ClaimDeposit(adaptorPrivKey, *antiSpamID)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ok, adaptorPrivKey2, err := ethChain.LookupAdaptorPrivKey(adaptorPubKey)
-	fmt.Println(ok, adaptorPrivKey2)
-	if ok {
-		fmt.Println(bytes.Compare(adaptorPrivKey, *adaptorPrivKey2))
-	}
-}
-
 func main() {
 	passwordBytes, err := ioutil.ReadFile(prependHomeDirectory(defaultPasswordFile))
 	if err != nil {
@@ -195,7 +144,10 @@ func main() {
 	}
 	password := strings.TrimSpace(string(passwordBytes))
 
-	ethChain, err := ethereum.NewJSONRPCBlockchain(ganacheEndpoint, ganachePrivKey)
+	//ethChain, err := ethereum.NewGanacheBlockchain()
+	endpoint := prependHomeDirectory(jsonRPCEndpoint)
+	keystoreFile := prependHomeDirectory(jsonRPCKeystoreFile)
+	ethChain, err := ethereum.NewJSONRPCBlockchain(endpoint, keystoreFile, &contractAddress)
 	if err != nil {
 		log.Fatal(err)
 	}

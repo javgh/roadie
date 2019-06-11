@@ -2,6 +2,7 @@ package ethereum
 
 import (
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -11,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -129,16 +131,13 @@ func NewJSONRPCBlockchain(endpoint string, keystoreFile string, contractAddress 
 }
 
 func (c *JSONRPCBlockchain) BurnAntiSpamFee(antiSpamID big.Int, antiSpamFee big.Int) error {
-	hashedID, err := c.hub.Hash(nil, &antiSpamID)
-	if err != nil {
-		return err
-	}
+	hashedID := hash(antiSpamID)
 
 	auth := bind.NewKeyedTransactor(&c.privKey)
 	auth.Value = &antiSpamFee
 	auth.GasLimit = smallGasLimit
 
-	_, err = c.hub.BurnAntiSpamFee(auth, hashedID)
+	_, err := c.hub.BurnAntiSpamFee(auth, hashedID)
 	return err
 }
 
@@ -152,10 +151,7 @@ func (c *JSONRPCBlockchain) CheckAntiSpamConfirmations(antiSpamID big.Int, antiS
 }
 func (c *JSONRPCBlockchain) DepositEther(
 	recipient common.Address, adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) error {
-	hashedID, err := c.hub.Hash(nil, &antiSpamID)
-	if err != nil {
-		return err
-	}
+	hashedID := hash(antiSpamID)
 
 	adaptorPubKeyBytes := switchEndianness(adaptorPubKey[:])
 	adaptorPubKeyBytes[0] &= 127 // clear sign bit
@@ -165,16 +161,13 @@ func (c *JSONRPCBlockchain) DepositEther(
 	auth.Value = &ether
 	auth.GasLimit = mediumGasLimit
 
-	_, err = c.hub.DepositEther(auth, recipient, adaptorPubKeyBigInt, hashedID)
+	_, err := c.hub.DepositEther(auth, recipient, adaptorPubKeyBigInt, hashedID)
 	return err
 }
 
 func (c *JSONRPCBlockchain) CheckDepositConfirmations(
 	recipient common.Address, adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) (int64, error) {
-	hashedID, err := c.hub.Hash(nil, &antiSpamID)
-	if err != nil {
-		return 0, err
-	}
+	hashedID := hash(antiSpamID)
 
 	adaptorPubKeyBytes := switchEndianness(adaptorPubKey[:])
 	adaptorPubKeyBytes[0] &= 127 // clear sign bit
@@ -226,6 +219,10 @@ func switchEndianness(in []byte) []byte {
 		out[i] = in[len(in)-1-i]
 	}
 	return out
+}
+
+func hash(id big.Int) [32]byte {
+	return sha256.Sum256(math.PaddedBigBytes(&id, 32))
 }
 
 func FormatEther(ether *big.Int) string {

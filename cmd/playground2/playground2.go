@@ -144,10 +144,10 @@ func main() {
 	}
 	password := strings.TrimSpace(string(passwordBytes))
 
-	//ethChain, err := ethereum.NewGanacheBlockchain()
-	endpoint := prependHomeDirectory(jsonRPCEndpoint)
-	keystoreFile := prependHomeDirectory(jsonRPCKeystoreFile)
-	ethChain, err := ethereum.NewJSONRPCBlockchain(endpoint, keystoreFile, &contractAddress)
+	ethChain, err := ethereum.NewGanacheBlockchain()
+	//endpoint := prependHomeDirectory(jsonRPCEndpoint)
+	//keystoreFile := prependHomeDirectory(jsonRPCKeystoreFile)
+	//ethChain, err := ethereum.NewJSONRPCBlockchain(endpoint, keystoreFile, &contractAddress)
 	if err != nil {
 		log.Fatal(err)
 	}

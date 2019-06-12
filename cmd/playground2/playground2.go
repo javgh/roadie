@@ -26,6 +26,7 @@ import (
 const (
 	defaultClientAddress  = "localhost:9980"
 	defaultPasswordFile   = ".sia/apipassword"
+	bindingOfferLifetime  = 1 * time.Minute
 	antiSpamConfirmations = 10
 	depositConfirmations  = 10
 	minTimelockOffset     = 1
@@ -33,17 +34,19 @@ const (
 	fundingConfirmations = 1 //3
 	jsonRPCEndpoint      = ".ethereum/geth.ipc"
 	jsonRPCKeystoreFile  = ".config/roadie/keystore"
+	boostInterval        = 90 * time.Second
 )
 
 var (
-	oneSiacoin              = types.SiacoinPrecision
-	defaultMinerFee         = oneSiacoin
-	finney                  = big.NewInt(1e15)
-	defaultAntiSpamFee      = big.NewInt(1e14)
-	maxAntiSpamID           = new(big.Int).Exp(big.NewInt(2), big.NewInt(64), nil)
-	bindingOfferLifetime, _ = time.ParseDuration("1m")
-	mockWalletAddress       = common.HexToAddress("0x0000000000000000000000000000000000000000")
-	contractAddress         = common.HexToAddress("0x799DF2482f589663d7754451de3FfeF4CAA439c8")
+	oneSiacoin         = types.SiacoinPrecision
+	defaultMinerFee    = oneSiacoin
+	gwei               = big.NewInt(1e9)
+	finney             = big.NewInt(1e15)
+	defaultAntiSpamFee = big.NewInt(1e14)
+	maxAntiSpamID      = new(big.Int).Exp(big.NewInt(2), big.NewInt(64), nil)
+	mockWalletAddress  = common.HexToAddress("0x0000000000000000000000000000000000000000")
+	contractAddress    = common.HexToAddress("0x799DF2482f589663d7754451de3FfeF4CAA439c8")
+	maxGasPrice        = new(big.Int).Mul(big.NewInt(21), gwei)
 )
 
 type (
@@ -144,10 +147,11 @@ func main() {
 	}
 	password := strings.TrimSpace(string(passwordBytes))
 
-	ethChain, err := ethereum.NewGanacheBlockchain()
-	//endpoint := prependHomeDirectory(jsonRPCEndpoint)
-	//keystoreFile := prependHomeDirectory(jsonRPCKeystoreFile)
-	//ethChain, err := ethereum.NewJSONRPCBlockchain(endpoint, keystoreFile, &contractAddress)
+	//ethChain, err := ethereum.NewGanacheBlockchain()
+	endpoint := prependHomeDirectory(jsonRPCEndpoint)
+	keystoreFile := prependHomeDirectory(jsonRPCKeystoreFile)
+	ethChain, err := ethereum.NewJSONRPCBlockchain(
+		endpoint, keystoreFile, &contractAddress, *maxGasPrice, boostInterval)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -177,8 +181,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Printf("Burning anti-spam fee (id %s) and waiting for Ethereum confirmations.\n", antiSpamID.Text(10))
 	ethChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer.AntiSpamFee)
-	fmt.Printf("Burned anti-spam fee (id %s) and waiting for Ethereum confirmations.\n", antiSpamID.Text(10))
 	confDisplay := confirmationDisplay{current: -1, total: antiSpamConfirmations}
 	for {
 		confs, err := ethChain.CheckAntiSpamConfirmations(*antiSpamID, nonBindingOffer.AntiSpamFee)
@@ -248,7 +252,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Waiting for Sia confirmations for funding transaction %s .\n", fundingTxID)
+	fmt.Printf("\nWaiting for Sia confirmations for funding transaction %s .\n", fundingTxID)
 	confDisplay = confirmationDisplay{current: -1, total: fundingConfirmations}
 	for {
 		confs, err := drSiaChain.ConfsOfRecentUnlockHash(jointUnlockConditions.UnlockHash(), oneSiacoin.Add(defaultMinerFee))
@@ -287,8 +291,8 @@ func main() {
 		log.Fatal("unable to verify adaptor signature")
 	}
 
+	fmt.Printf("Depositing payment and waiting for Ethereum confirmations.\n")
 	ethChain.DepositEther(adaptorDetails.DepositRecipient, adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
-	fmt.Printf("Deposited payment and waiting for Ethereum confirmations.\n")
 	confDisplay = confirmationDisplay{current: -1, total: depositConfirmations}
 	for {
 		confs, err := ethChain.CheckDepositConfirmations(
@@ -350,7 +354,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Swap successfully completed with Sia claim transaction %s .\n", claimTx.ID())
+	fmt.Printf("Swap completed successfully with Sia claim transaction %s .\n", claimTx.ID())
 
 	atomicSwap.Rollback()
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
+	"time"
 
 	"github.com/HyperspaceApp/ed25519"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -17,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	contract "github.com/javgh/roadie/contract/hub"
+	"github.com/javgh/roadie/contract/retryinghub"
 )
 
 const (
@@ -26,12 +28,15 @@ const (
 	largeGasLimit        = 1500000
 	ganacheEndpoint      = "http://127.0.0.1:8545"
 	ganachePrivKey       = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
+	ganacheBoostInterval = 5 * time.Second
 )
 
 var (
 	ErrCasting = errors.New("error casting public key to ECDSA")
 
-	oneEther = big.NewInt(1e18)
+	gwei               = big.NewInt(1e9)
+	oneEther           = big.NewInt(1e18)
+	ganacheMaxGasPrice = new(big.Int).Mul(big.NewInt(100), gwei)
 )
 
 type (
@@ -39,7 +44,7 @@ type (
 		client        ethclient.Client
 		privKey       ecdsa.PrivateKey
 		walletAddress common.Address
-		hub           contract.Hub
+		retryingHub   retryinghub.RetryingHub
 	}
 
 	Blockchain interface {
@@ -77,16 +82,20 @@ func NewGanacheBlockchain() (*JSONRPCBlockchain, error) {
 		return nil, err
 	}
 
+	retryingHub := retryinghub.New(
+		*ganacheMaxGasPrice, ganacheBoostInterval, *client, *privKeyECDSA, walletAddress, *hub)
+
 	c := JSONRPCBlockchain{
 		client:        *client,
 		privKey:       *privKeyECDSA,
 		walletAddress: walletAddress,
-		hub:           *hub,
+		retryingHub:   retryingHub,
 	}
 	return &c, nil
 }
 
-func NewJSONRPCBlockchain(endpoint string, keystoreFile string, contractAddress *common.Address) (*JSONRPCBlockchain, error) {
+func NewJSONRPCBlockchain(endpoint string, keystoreFile string, contractAddress *common.Address,
+	maxGasPrice big.Int, boostInterval time.Duration) (*JSONRPCBlockchain, error) {
 	client, err := ethclient.Dial(endpoint)
 	if err != nil {
 		return nil, err
@@ -102,6 +111,13 @@ func NewJSONRPCBlockchain(endpoint string, keystoreFile string, contractAddress 
 		return nil, err
 	}
 
+	pubKey := key.PrivateKey.Public()
+	pubKeyECDSA, ok := pubKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, ErrCasting
+	}
+	walletAddress := crypto.PubkeyToAddress(*pubKeyECDSA)
+
 	var hub *contract.Hub
 	if contractAddress != nil {
 		hub, err = contract.NewHub(*contractAddress, client)
@@ -110,43 +126,32 @@ func NewJSONRPCBlockchain(endpoint string, keystoreFile string, contractAddress 
 		}
 	} else {
 		auth := bind.NewKeyedTransactor(key.PrivateKey)
-
-		//gwei := new(big.Int).Mul(big.NewInt(5), big.NewInt(1e9))
-		//auth.Nonce = big.NewInt(0)
-		//auth.GasPrice = gwei
-
 		_, _, hub, err = contract.DeployHub(auth, client)
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	retryingHub := retryinghub.New(
+		maxGasPrice, boostInterval, *client, *key.PrivateKey, walletAddress, *hub)
+
 	c := JSONRPCBlockchain{
 		client:        *client,
 		privKey:       *key.PrivateKey,
 		walletAddress: key.Address,
-		hub:           *hub,
+		retryingHub:   retryingHub,
 	}
 	return &c, nil
 }
 
 func (c *JSONRPCBlockchain) BurnAntiSpamFee(antiSpamID big.Int, antiSpamFee big.Int) error {
 	hashedID := hash(antiSpamID)
-
-	auth := bind.NewKeyedTransactor(&c.privKey)
-	auth.Value = &antiSpamFee
-	auth.GasLimit = smallGasLimit
-
-	_, err := c.hub.BurnAntiSpamFee(auth, hashedID)
-	return err
+	c.retryingHub.BurnAntiSpamFee(hashedID, &antiSpamFee, smallGasLimit)
+	return nil
 }
 
 func (c *JSONRPCBlockchain) CheckAntiSpamConfirmations(antiSpamID big.Int, antiSpamFee big.Int) (int64, error) {
-	confs, err := c.hub.CheckAntiSpamConfirmations(nil, &antiSpamID, &antiSpamFee)
-	if err != nil {
-		return 0, err
-	}
-
+	confs := c.retryingHub.CheckAntiSpamConfirmations(&antiSpamID, &antiSpamFee)
 	return confs.Int64(), nil
 }
 func (c *JSONRPCBlockchain) DepositEther(
@@ -157,12 +162,8 @@ func (c *JSONRPCBlockchain) DepositEther(
 	adaptorPubKeyBytes[0] &= 127 // clear sign bit
 	adaptorPubKeyBigInt := new(big.Int).SetBytes(adaptorPubKeyBytes)
 
-	auth := bind.NewKeyedTransactor(&c.privKey)
-	auth.Value = &ether
-	auth.GasLimit = mediumGasLimit
-
-	_, err := c.hub.DepositEther(auth, recipient, adaptorPubKeyBigInt, hashedID)
-	return err
+	c.retryingHub.DepositEther(recipient, adaptorPubKeyBigInt, hashedID, &ether, mediumGasLimit)
+	return nil
 }
 
 func (c *JSONRPCBlockchain) CheckDepositConfirmations(
@@ -173,22 +174,14 @@ func (c *JSONRPCBlockchain) CheckDepositConfirmations(
 	adaptorPubKeyBytes[0] &= 127 // clear sign bit
 	adaptorPubKeyBigInt := new(big.Int).SetBytes(adaptorPubKeyBytes)
 
-	confs, err := c.hub.CheckDepositConfirmations(nil, recipient, adaptorPubKeyBigInt, &ether, hashedID)
-	if err != nil {
-		return 0, err
-	}
-
+	confs := c.retryingHub.CheckDepositConfirmations(recipient, adaptorPubKeyBigInt, &ether, hashedID)
 	return confs.Int64(), nil
 }
 
 func (c *JSONRPCBlockchain) ClaimDeposit(adaptorPrivKey ed25519.Adaptor, antiSpamID big.Int) error {
 	adaptorPrivKeyBigInt := new(big.Int).SetBytes(switchEndianness(adaptorPrivKey[:]))
-
-	auth := bind.NewKeyedTransactor(&c.privKey)
-	auth.GasLimit = largeGasLimit
-
-	_, err := c.hub.ClaimDeposit(auth, adaptorPrivKeyBigInt, &antiSpamID)
-	return err
+	c.retryingHub.ClaimDeposit(adaptorPrivKeyBigInt, &antiSpamID, big.NewInt(0), largeGasLimit)
+	return nil
 }
 
 func (c *JSONRPCBlockchain) LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) (bool, *ed25519.Adaptor, error) {
@@ -196,11 +189,7 @@ func (c *JSONRPCBlockchain) LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoin
 	adaptorPubKeyBytes[0] &= 127 // clear sign bit
 	adaptorPubKeyBigInt := new(big.Int).SetBytes(adaptorPubKeyBytes)
 
-	adaptorPrivKeyBigInt, err := c.hub.AdaptorPrivKeys(nil, adaptorPubKeyBigInt)
-	if err != nil {
-		return false, nil, err
-	}
-
+	adaptorPrivKeyBigInt := c.retryingHub.AdaptorPrivKeys(adaptorPubKeyBigInt)
 	if adaptorPrivKeyBigInt.Cmp(big.NewInt(0)) == 0 {
 		return false, nil, nil
 	}

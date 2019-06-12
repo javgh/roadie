@@ -17,6 +17,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.1 // indirect
 	github.com/huin/goupnp v1.0.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.1 // indirect
+	github.com/jpillora/backoff v0.0.0-20180909062703-3050d21c67d7
 	github.com/julienschmidt/httprouter v1.2.0 // indirect
 	github.com/karalabe/hid v1.0.0 // indirect
 	github.com/klauspost/cpuid v1.2.1 // indirect

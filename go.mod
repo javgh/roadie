@@ -43,6 +43,7 @@ require (
 	gitlab.com/NebulousLabs/threadgroup v0.0.0-20180716154133-88a11db9e46c // indirect
 	gitlab.com/NebulousLabs/writeaheadlog v0.0.0-20180919184411-4f883ffbdd01 // indirect
 	golang.org/x/crypto v0.0.0-20190513172903-22d7a77e9e5f // indirect
+	google.golang.org/grpc v1.21.1
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/urfave/cli.v1 v1.20.0 // indirect
 )

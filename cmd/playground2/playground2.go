@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/big"
+	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/javgh/roadie/blockchain/sia"
 	"github.com/javgh/roadie/bob"
 	"github.com/javgh/roadie/keypair"
+	"github.com/javgh/roadie/rpc"
 	"github.com/javgh/roadie/trader"
 )
 
@@ -141,6 +143,45 @@ func prependHomeDirectory(path string) string {
 }
 
 func main() {
+	if len(os.Args) == 1 {
+		passwordBytes, err := ioutil.ReadFile(prependHomeDirectory(defaultPasswordFile))
+		if err != nil {
+			log.Fatal(err)
+		}
+		password := strings.TrimSpace(string(passwordBytes))
+
+		ethChain, err := ethereum.NewGanacheBlockchain()
+
+		siaChain, err := sia.NewHTTPAPIBlockchain(defaultClientAddress, password)
+		if err != nil {
+			log.Fatal(err)
+		}
+		drSiaChain := sia.NewDryRunBlockchain(*siaChain)
+
+		mockTrader := mockTrader{}
+		blacklist := bob.NewBlacklist()
+		atomicSwap := bob.NewAtomicSwap(&mockTrader, ethChain, &drSiaChain, blacklist, time.Now())
+
+		err = rpc.Playground(atomicSwap)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		roadieClient, err := rpc.Dial("localhost:9000")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		nonBindingOffer, err := roadieClient.RequestNonBindingOffer(oneSiacoin)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Println(nonBindingOffer)
+	}
+}
+
+func main2() {
 	passwordBytes, err := ioutil.ReadFile(prependHomeDirectory(defaultPasswordFile))
 	if err != nil {
 		log.Fatal(err)

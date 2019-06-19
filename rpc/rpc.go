@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"sync"
+	"time"
 
+	"github.com/satori/go.uuid"
 	"gitlab.com/NebulousLabs/Sia/types"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/encoding"
 
 	"github.com/javgh/roadie/bob"
@@ -23,7 +27,7 @@ var (
 
 	serviceDesc = grpc.ServiceDesc{
 		ServiceName: "Roadie",
-		HandlerType: (*RoadieServer)(nil),
+		HandlerType: (*Server)(nil),
 		Methods: []grpc.MethodDesc{
 			{
 				MethodName: "RequestNonBindingOffer",
@@ -51,12 +55,16 @@ func init() {
 }
 
 type (
-	RoadieServer interface {
+	Server interface {
 		RequestNonBindingOffer(*RNBORequest) (*RNBOResponse, error)
 	}
 
-	BobRoadieServer struct {
-		Playground bob.AtomicSwap
+	BobServer struct {
+		mutex         sync.Mutex
+		atomicSwaps   map[uuid.UUID]*bob.AtomicSwap
+		listener      net.Listener
+		grpcServer    *grpc.Server
+		newAtomicSwap func(now time.Time) *bob.AtomicSwap
 	}
 )
 
@@ -70,11 +78,17 @@ type (
 	}
 )
 
-func (s *BobRoadieServer) RequestNonBindingOffer(req *RNBORequest) (*RNBOResponse, error) {
+func (s *BobServer) RequestNonBindingOffer(req *RNBORequest) (*RNBOResponse, error) {
 	var err error
 	resp := new(RNBOResponse)
 
-	resp.Offer, err = s.Playground.RequestNonBindingOffer(req.Siacoin)
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	atomicSwap := s.newAtomicSwap(time.Now())
+	s.atomicSwaps[atomicSwap.ID] = atomicSwap
+
+	resp.Offer, err = atomicSwap.RequestNonBindingOffer(req.Siacoin)
 	if err != nil {
 		return nil, err
 	}
@@ -94,32 +108,46 @@ func requestNonBindingOfferHandler(srv interface{}, ctx context.Context, dec fun
 		return nil, err
 	}
 
-	return srv.(RoadieServer).RequestNonBindingOffer(in)
+	return srv.(Server).RequestNonBindingOffer(in)
 }
 
-func Playground(s bob.AtomicSwap) error {
-	roadieServer := BobRoadieServer{s}
-	grpcServer := grpc.NewServer() // TODO: grpc.Creds(creds)
-	grpcServer.RegisterService(&serviceDesc, &roadieServer)
+func NewBobServer(network string, address string, certFile string, keyFile string,
+	newAtomicSwap func(now time.Time) *bob.AtomicSwap) (*BobServer, error) {
+	opts := []grpc.ServerOption{}
+	if certFile != "" && keyFile != "" {
+		creds, err := credentials.NewServerTLSFromFile(certFile, keyFile)
+		if err != nil {
+			return nil, err
+		}
 
-	lis, err := net.Listen("tcp", "localhost:9000")
-	if err != nil {
-		return err
+		opts = append(opts, grpc.Creds(creds))
 	}
 
-	err = grpcServer.Serve(lis)
+	listener, err := net.Listen(network, address)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	bobServer := BobServer{
+		atomicSwaps:   make(map[uuid.UUID]*bob.AtomicSwap),
+		listener:      listener,
+		newAtomicSwap: newAtomicSwap,
+	}
+	bobServer.grpcServer = grpc.NewServer(opts...)
+	bobServer.grpcServer.RegisterService(&serviceDesc, &bobServer)
+
+	return &bobServer, nil
 }
 
-type RoadieClient struct {
+func (s *BobServer) Serve() error {
+	return s.grpcServer.Serve(s.listener)
+}
+
+type Client struct {
 	conn *grpc.ClientConn
 }
 
-func (c *RoadieClient) RequestNonBindingOffer(siacoin types.Currency) (*trader.Offer, error) {
+func (c *Client) RequestNonBindingOffer(siacoin types.Currency) (*trader.Offer, error) {
 	in := RNBORequest{
 		Siacoin: siacoin,
 	}
@@ -132,7 +160,7 @@ func (c *RoadieClient) RequestNonBindingOffer(siacoin types.Currency) (*trader.O
 	return out.Offer, nil
 }
 
-func Dial(target string) (*RoadieClient, error) {
+func Dial(target string) (*Client, error) {
 	conn, err := grpc.Dial(target,
 		grpc.WithInsecure(),
 		grpc.WithDefaultCallOptions(grpc.CallContentSubtype(JSONCodec{}.Name())),
@@ -141,6 +169,6 @@ func Dial(target string) (*RoadieClient, error) {
 		return nil, err
 	}
 
-	client := RoadieClient{conn}
+	client := Client{conn}
 	return &client, nil
 }

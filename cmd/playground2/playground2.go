@@ -160,9 +160,16 @@ func main() {
 
 		mockTrader := mockTrader{}
 		blacklist := bob.NewBlacklist()
-		atomicSwap := bob.NewAtomicSwap(&mockTrader, ethChain, &drSiaChain, blacklist, time.Now())
 
-		err = rpc.Playground(atomicSwap)
+		newAtomicSwap := func(now time.Time) *bob.AtomicSwap {
+			return bob.NewAtomicSwap(&mockTrader, ethChain, &drSiaChain, blacklist, now)
+		}
+		bobServer, err := rpc.NewBobServer("tcp", "localhost:9000", "", "", newAtomicSwap)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = bobServer.Serve()
 		if err != nil {
 			log.Fatal(err)
 		}

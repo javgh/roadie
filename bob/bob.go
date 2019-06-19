@@ -23,7 +23,7 @@ type (
 	state int
 
 	AtomicSwap struct {
-		id             uuid.UUID
+		ID             uuid.UUID
 		state          state
 		deadline       *time.Time
 		siacoin        types.Currency
@@ -109,11 +109,11 @@ func (b *Blacklist) contains(id big.Int) bool {
 }
 
 func NewAtomicSwap(trader trader.Trader, ethChain ethereum.Blockchain, siaChain sia.Blockchain,
-	blacklist Blacklist, now time.Time) AtomicSwap {
+	blacklist Blacklist, now time.Time) *AtomicSwap {
 	id := uuid.NewV4()
 	deadline := now.Add(atomicSwapLifetime)
-	return AtomicSwap{
-		id:        id,
+	atomicSwap := AtomicSwap{
+		ID:        id,
 		state:     stateInitialized,
 		deadline:  &deadline,
 		trader:    trader,
@@ -121,6 +121,7 @@ func NewAtomicSwap(trader trader.Trader, ethChain ethereum.Blockchain, siaChain 
 		siaChain:  siaChain,
 		blacklist: blacklist,
 	}
+	return &atomicSwap
 }
 
 func (s *AtomicSwap) RequestNonBindingOffer(siacoin types.Currency) (*trader.Offer, error) {

@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math/big"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/HyperspaceApp/ed25519"
 	"github.com/satori/go.uuid"
 	"gitlab.com/NebulousLabs/Sia/types"
 	"google.golang.org/grpc"
@@ -24,6 +26,7 @@ type (
 
 var (
 	ErrNotImplemented = errors.New("interceptor support is not implemented")
+	ErrUnknownID      = errors.New("unknown id")
 
 	serviceDesc = grpc.ServiceDesc{
 		ServiceName: "Roadie",
@@ -32,6 +35,26 @@ var (
 			{
 				MethodName: "RequestNonBindingOffer",
 				Handler:    requestNonBindingOfferHandler,
+			},
+			{
+				MethodName: "RequestBindingOffer",
+				Handler:    requestBindingOfferHandler,
+			},
+			{
+				MethodName: "AcceptOffer",
+				Handler:    acceptOfferHandler,
+			},
+			{
+				MethodName: "EnableFunding",
+				Handler:    enableFundingHandler,
+			},
+			{
+				MethodName: "RequestAdaptorDetails",
+				Handler:    requestAdaptorDetailsHandler,
+			},
+			{
+				MethodName: "AnnounceDeposit",
+				Handler:    announceDepositHandler,
 			},
 		},
 		Streams: []grpc.StreamDesc{},
@@ -57,6 +80,11 @@ func init() {
 type (
 	Server interface {
 		RequestNonBindingOffer(*RNBORequest) (*RNBOResponse, error)
+		RequestBindingOffer(req *RBORequest) (*RBOResponse, error)
+		AcceptOffer(req *AORequest) (*AOResponse, error)
+		EnableFunding(req *EFRequest) (*EFResponse, error)
+		RequestAdaptorDetails(req *RADRequest) (*RADResponse, error)
+		AnnounceDeposit(req *ADRequest) (*ADResponse, error)
 	}
 
 	BobServer struct {
@@ -74,6 +102,7 @@ type (
 	}
 
 	RNBOResponse struct {
+		ID    uuid.UUID
 		Offer *trader.Offer
 	}
 )
@@ -92,6 +121,7 @@ func (s *BobServer) RequestNonBindingOffer(req *RNBORequest) (*RNBOResponse, err
 	if err != nil {
 		return nil, err
 	}
+	resp.ID = atomicSwap.ID
 
 	return resp, nil
 }
@@ -109,6 +139,235 @@ func requestNonBindingOfferHandler(srv interface{}, ctx context.Context, dec fun
 	}
 
 	return srv.(Server).RequestNonBindingOffer(in)
+}
+
+type (
+	RBORequest struct {
+		ID         uuid.UUID
+		AntiSpamID big.Int
+	}
+
+	RBOResponse struct {
+		Offer *trader.Offer
+	}
+)
+
+func (s *BobServer) RequestBindingOffer(req *RBORequest) (*RBOResponse, error) {
+	var err error
+	resp := new(RBOResponse)
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	atomicSwap, ok := s.atomicSwaps[req.ID]
+	if !ok {
+		return nil, ErrUnknownID
+	}
+
+	resp.Offer, err = atomicSwap.RequestBindingOffer(req.AntiSpamID, time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func requestBindingOfferHandler(srv interface{}, ctx context.Context, dec func(interface{}) error,
+	interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	if interceptor != nil {
+		return nil, ErrNotImplemented
+	}
+
+	in := new(RBORequest)
+	err := dec(in)
+	if err != nil {
+		return nil, err
+	}
+
+	return srv.(Server).RequestBindingOffer(in)
+}
+
+type (
+	AORequest struct {
+		ID          uuid.UUID
+		AlicePubKey ed25519.PublicKey
+	}
+
+	AOResponse struct {
+		RefundDetails *bob.RefundDetails
+	}
+)
+
+func (s *BobServer) AcceptOffer(req *AORequest) (*AOResponse, error) {
+	var err error
+	resp := new(AOResponse)
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	atomicSwap, ok := s.atomicSwaps[req.ID]
+	if !ok {
+		return nil, ErrUnknownID
+	}
+
+	resp.RefundDetails, err = atomicSwap.AcceptOffer(req.AlicePubKey, time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func acceptOfferHandler(srv interface{}, ctx context.Context, dec func(interface{}) error,
+	interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	if interceptor != nil {
+		return nil, ErrNotImplemented
+	}
+
+	in := new(AORequest)
+	err := dec(in)
+	if err != nil {
+		return nil, err
+	}
+
+	return srv.(Server).AcceptOffer(in)
+}
+
+type (
+	EFRequest struct {
+		ID                    uuid.UUID
+		AliceRefundNoncePoint ed25519.CurvePoint
+		RefundSigAlice        []byte
+	}
+
+	EFResponse struct {
+		TxID *types.TransactionID
+	}
+)
+
+func (s *BobServer) EnableFunding(req *EFRequest) (*EFResponse, error) {
+	var err error
+	resp := new(EFResponse)
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	atomicSwap, ok := s.atomicSwaps[req.ID]
+	if !ok {
+		return nil, ErrUnknownID
+	}
+
+	resp.TxID, err = atomicSwap.EnableFunding(req.AliceRefundNoncePoint, req.RefundSigAlice)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func enableFundingHandler(srv interface{}, ctx context.Context, dec func(interface{}) error,
+	interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	if interceptor != nil {
+		return nil, ErrNotImplemented
+	}
+
+	in := new(EFRequest)
+	err := dec(in)
+	if err != nil {
+		return nil, err
+	}
+
+	return srv.(Server).EnableFunding(in)
+}
+
+type (
+	RADRequest struct {
+		ID                   uuid.UUID
+		AliceClaimUnlockHash types.UnlockHash
+		AliceClaimNoncePoint ed25519.CurvePoint
+	}
+
+	RADResponse struct {
+		AdaptorDetails *bob.AdaptorDetails
+	}
+)
+
+func (s *BobServer) RequestAdaptorDetails(req *RADRequest) (*RADResponse, error) {
+	var err error
+	resp := new(RADResponse)
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	atomicSwap, ok := s.atomicSwaps[req.ID]
+	if !ok {
+		return nil, ErrUnknownID
+	}
+
+	resp.AdaptorDetails, err = atomicSwap.RequestAdaptorDetails(req.AliceClaimUnlockHash, req.AliceClaimNoncePoint)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func requestAdaptorDetailsHandler(srv interface{}, ctx context.Context, dec func(interface{}) error,
+	interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	if interceptor != nil {
+		return nil, ErrNotImplemented
+	}
+
+	in := new(RADRequest)
+	err := dec(in)
+	if err != nil {
+		return nil, err
+	}
+
+	return srv.(Server).RequestAdaptorDetails(in)
+}
+
+type (
+	ADRequest struct {
+		ID uuid.UUID
+	}
+
+	ADResponse struct{}
+)
+
+func (s *BobServer) AnnounceDeposit(req *ADRequest) (*ADResponse, error) {
+	var err error
+	resp := new(ADResponse)
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	atomicSwap, ok := s.atomicSwaps[req.ID]
+	if !ok {
+		return nil, ErrUnknownID
+	}
+
+	err = atomicSwap.AnnounceDeposit()
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func announceDepositHandler(srv interface{}, ctx context.Context, dec func(interface{}) error,
+	interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	if interceptor != nil {
+		return nil, ErrNotImplemented
+	}
+
+	in := new(ADRequest)
+	err := dec(in)
+	if err != nil {
+		return nil, err
+	}
+
+	return srv.(Server).AnnounceDeposit(in)
 }
 
 func NewBobServer(network string, address string, certFile string, keyFile string,
@@ -147,17 +406,90 @@ type Client struct {
 	conn *grpc.ClientConn
 }
 
-func (c *Client) RequestNonBindingOffer(siacoin types.Currency) (*trader.Offer, error) {
+func (c *Client) RequestNonBindingOffer(siacoin types.Currency) (*uuid.UUID, *trader.Offer, error) {
 	in := RNBORequest{
 		Siacoin: siacoin,
 	}
 	out := new(RNBOResponse)
 	err := grpc.Invoke(context.Background(), "/Roadie/RequestNonBindingOffer", &in, out, c.conn)
 	if err != nil {
+		return nil, nil, err
+	}
+
+	return &out.ID, out.Offer, nil
+}
+
+func (c *Client) RequestBindingOffer(id uuid.UUID, antiSpamID big.Int) (*trader.Offer, error) {
+	in := RBORequest{
+		ID:         id,
+		AntiSpamID: antiSpamID,
+	}
+	out := new(RBOResponse)
+	err := grpc.Invoke(context.Background(), "/Roadie/RequestBindingOffer", &in, out, c.conn)
+	if err != nil {
 		return nil, err
 	}
 
 	return out.Offer, nil
+}
+
+func (c *Client) AcceptOffer(id uuid.UUID, alicePubKey ed25519.PublicKey) (*bob.RefundDetails, error) {
+	in := AORequest{
+		ID:          id,
+		AlicePubKey: alicePubKey,
+	}
+	out := new(AOResponse)
+	err := grpc.Invoke(context.Background(), "/Roadie/AcceptOffer", &in, out, c.conn)
+	if err != nil {
+		return nil, err
+	}
+
+	return out.RefundDetails, nil
+}
+
+func (c *Client) EnableFunding(id uuid.UUID,
+	aliceRefundNoncePoint ed25519.CurvePoint, refundSigAlice []byte) (*types.TransactionID, error) {
+	in := EFRequest{
+		ID:                    id,
+		AliceRefundNoncePoint: aliceRefundNoncePoint,
+		RefundSigAlice:        refundSigAlice,
+	}
+	out := new(EFResponse)
+	err := grpc.Invoke(context.Background(), "/Roadie/EnableFunding", &in, out, c.conn)
+	if err != nil {
+		return nil, err
+	}
+
+	return out.TxID, nil
+}
+
+func (c *Client) RequestAdaptorDetails(id uuid.UUID,
+	aliceClaimUnlockHash types.UnlockHash, aliceClaimNoncePoint ed25519.CurvePoint) (*bob.AdaptorDetails, error) {
+	in := RADRequest{
+		ID:                   id,
+		AliceClaimUnlockHash: aliceClaimUnlockHash,
+		AliceClaimNoncePoint: aliceClaimNoncePoint,
+	}
+	out := new(RADResponse)
+	err := grpc.Invoke(context.Background(), "/Roadie/RequestAdaptorDetails", &in, out, c.conn)
+	if err != nil {
+		return nil, err
+	}
+
+	return out.AdaptorDetails, nil
+}
+
+func (c *Client) AnnounceDeposit(id uuid.UUID) error {
+	in := ADRequest{
+		ID: id,
+	}
+	out := new(ADResponse)
+	err := grpc.Invoke(context.Background(), "/Roadie/AnnounceDeposit", &in, out, c.conn)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func Dial(target string) (*Client, error) {

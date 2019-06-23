@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/rand"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"math/big"
@@ -19,7 +17,6 @@ import (
 	"github.com/javgh/roadie/blockchain/ethereum"
 	"github.com/javgh/roadie/blockchain/sia"
 	"github.com/javgh/roadie/bob"
-	"github.com/javgh/roadie/keypair"
 	"github.com/javgh/roadie/rpc"
 	"github.com/javgh/roadie/trader"
 )
@@ -30,21 +27,16 @@ const (
 	bindingOfferLifetime  = 1 * time.Minute
 	antiSpamConfirmations = 10
 	depositConfirmations  = 10
-	minTimelockOffset     = 1
-	//minTimelockOffset     = types.BlockHeight(24 - 2) // 24 blocks (~ 4 hours) with some leeway
-	fundingConfirmations = 1 //3
-	jsonRPCEndpoint      = ".ethereum/geth.ipc"
-	jsonRPCKeystoreFile  = ".config/roadie/keystore"
-	boostInterval        = 90 * time.Second
+	jsonRPCEndpoint       = ".ethereum/geth.ipc"
+	jsonRPCKeystoreFile   = ".config/roadie/keystore"
+	boostInterval         = 90 * time.Second
 )
 
 var (
 	oneSiacoin         = types.SiacoinPrecision
-	defaultMinerFee    = oneSiacoin
 	gwei               = big.NewInt(1e9)
 	finney             = big.NewInt(1e15)
 	defaultAntiSpamFee = big.NewInt(1e14)
-	maxAntiSpamID      = new(big.Int).Exp(big.NewInt(2), big.NewInt(64), nil)
 	mockWalletAddress  = common.HexToAddress("0x0000000000000000000000000000000000000000")
 	contractAddress    = common.HexToAddress("0x799DF2482f589663d7754451de3FfeF4CAA439c8")
 	maxGasPrice        = new(big.Int).Mul(big.NewInt(21), gwei)
@@ -52,11 +44,6 @@ var (
 
 type (
 	mockTrader struct{}
-
-	confirmationDisplay struct {
-		current int64
-		total   int64
-	}
 )
 
 func (mt *mockTrader) PrepareNonBindingOffer(siacoin types.Currency, minerFee types.Currency) (*trader.Offer, error) {
@@ -121,18 +108,6 @@ func (mc *mockChain) WalletAddress() common.Address {
 	return mockWalletAddress
 }
 
-func (d *confirmationDisplay) show(current int64) {
-	if d.current == current {
-		return
-	}
-
-	d.current = current
-	fmt.Printf("%d/%d", d.current, d.total)
-	if d.current < d.total {
-		fmt.Printf(".. ")
-	}
-}
-
 func prependHomeDirectory(path string) string {
 	currentUser, err := user.Current()
 	if err != nil {
@@ -193,419 +168,16 @@ func server(ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
 }
 
 func client(ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
+	frontend := alice.NewConsoleFrontend()
+	//frontend := alice.AutoAcceptFrontend{}
+
 	roadieClient, err := rpc.Dial("localhost:9000")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	id, nonBindingOffer, err := roadieClient.RequestNonBindingOffer(oneSiacoin)
+	err = alice.PerformSwap(oneSiacoin, frontend, ethChain, siaChain, roadieClient)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Println("ID:", id)
-
-	consoleFrontend := alice.NewConsoleFrontend()
-	_, err = consoleFrontend.ApproveOffer(oneSiacoin, *nonBindingOffer, false)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	antiSpamID, err := rand.Int(rand.Reader, maxAntiSpamID)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("Burning anti-spam fee (id %s) and waiting for Ethereum confirmations.\n", antiSpamID.Text(10))
-	ethChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer.AntiSpamFee)
-	confDisplay := confirmationDisplay{current: -1, total: antiSpamConfirmations}
-	for {
-		confs, err := ethChain.CheckAntiSpamConfirmations(*antiSpamID, nonBindingOffer.AntiSpamFee)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		confDisplay.show(confs)
-		if confs < antiSpamConfirmations {
-			time.Sleep(10 * time.Second)
-		} else {
-			fmt.Printf("\n")
-			break
-		}
-	}
-
-	bindingOffer, err := roadieClient.RequestBindingOffer(*id, *antiSpamID)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if bindingOffer.Ether.Cmp(&nonBindingOffer.Ether) != 0 {
-		_, err = consoleFrontend.ApproveOffer(oneSiacoin, *bindingOffer, true)
-	}
-
-	aliceKeypair, err := keypair.Generate()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	refundDetails, err := roadieClient.AcceptOffer(*id, aliceKeypair.PubKey)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	height, err := siaChain.Height()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	minTimelock := *height + minTimelockOffset
-	if refundDetails.Timelock < minTimelock {
-		log.Fatal("proposed timelock is too short")
-	}
-
-	jointPubKey, jointPrimeKeys, err := ed25519.GenerateJointKey(
-		[]ed25519.PublicKey{aliceKeypair.PubKey, refundDetails.BobPubKey})
-	if err != nil {
-		log.Fatal(err)
-	}
-	jointUnlockConditions := sia.PubKeyUnlockConditions(jointPubKey)
-
-	refundTx := sia.BuildRefundTransaction(
-		refundDetails.FundingOutputID, jointUnlockConditions, refundDetails.BobRefundUnlockHash,
-		oneSiacoin, defaultMinerFee, refundDetails.Timelock)
-
-	refundSigHash := sia.WholeSigHash(refundTx, *height)
-	aliceRefundNoncePoint := ed25519.GenerateNoncePoint(aliceKeypair.PrivKey, refundSigHash)
-	refundSigAlice, err := keypair.JointSignAlice(aliceKeypair, refundDetails.BobPubKey,
-		[]ed25519.CurvePoint{aliceRefundNoncePoint, refundDetails.BobRefundNoncePoint}, refundSigHash)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fundingTxID, err := roadieClient.EnableFunding(*id, aliceRefundNoncePoint, refundSigAlice)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("\nWaiting for Sia confirmations for funding transaction %s .\n", fundingTxID)
-	confDisplay = confirmationDisplay{current: -1, total: fundingConfirmations}
-	for {
-		confs, err := siaChain.ConfsOfRecentUnlockHash(jointUnlockConditions.UnlockHash(), oneSiacoin.Add(defaultMinerFee))
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		confDisplay.show(confs)
-		if confs < fundingConfirmations {
-			time.Sleep(10 * time.Second)
-		} else {
-			fmt.Printf("\n\n")
-			break
-		}
-	}
-
-	aliceClaimUnlockHash, err := siaChain.NextWalletUnlockHash()
-	if err != nil {
-		log.Fatal(err)
-	}
-	claimTx := sia.BuildClaimTransaction(
-		refundDetails.FundingOutputID, jointUnlockConditions, *aliceClaimUnlockHash,
-		oneSiacoin, defaultMinerFee)
-	claimSigHash := sia.WholeSigHash(claimTx, *height)
-	aliceClaimNoncePoint := ed25519.GenerateNoncePoint(aliceKeypair.PrivKey, claimSigHash)
-
-	adaptorDetails, err := roadieClient.RequestAdaptorDetails(*id, *aliceClaimUnlockHash, aliceClaimNoncePoint)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	adaptorSigOK := keypair.VerifyBobsAdaptorSignature(
-		jointPrimeKeys, jointPubKey, []ed25519.CurvePoint{aliceClaimNoncePoint, adaptorDetails.BobClaimNoncePoint},
-		adaptorDetails.AdaptorPubKey, claimSigHash, adaptorDetails.AdaptorSigBob)
-	if !adaptorSigOK {
-		log.Fatal("unable to verify adaptor signature")
-	}
-
-	fmt.Printf("Depositing payment and waiting for Ethereum confirmations.\n")
-	ethChain.DepositEther(adaptorDetails.DepositRecipient, adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
-	confDisplay = confirmationDisplay{current: -1, total: depositConfirmations}
-	for {
-		confs, err := ethChain.CheckDepositConfirmations(
-			adaptorDetails.DepositRecipient, adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		confDisplay.show(confs)
-		if confs < depositConfirmations {
-			time.Sleep(10 * time.Second)
-		} else {
-			fmt.Printf("\n\n")
-			break
-		}
-	}
-
-	err = roadieClient.AnnounceDeposit(*id)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("Waiting for other party to claim deposit and reveal adaptor secret.\n")
-	var ok bool
-	var adaptorPrivKey *ed25519.Adaptor
-	for {
-		ok, adaptorPrivKey, err = ethChain.LookupAdaptorPrivKey(adaptorDetails.AdaptorPubKey)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if !ok {
-			time.Sleep(10 * time.Second)
-		} else {
-			break
-		}
-	}
-
-	fmt.Printf("Using adaptor secret to build a valid claim transaction and broadcast it.\n")
-
-	noncePoints := []ed25519.CurvePoint{aliceClaimNoncePoint, adaptorDetails.BobClaimNoncePoint}
-	adaptorSigAlice, err := keypair.JointSignWithAdaptorAlice(
-		aliceKeypair, refundDetails.BobPubKey, noncePoints, adaptorDetails.AdaptorPubKey, claimSigHash)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	claimSig := ed25519.AddSignature(adaptorSigAlice, adaptorDetails.AdaptorSigBob)
-	claimSig = ed25519.AddSignature(claimSig, append(adaptorDetails.AdaptorPubKey, *adaptorPrivKey...))
-
-	claimSigOK := ed25519.Verify(jointPubKey, claimSigHash, claimSig)
-	if !claimSigOK {
-		log.Fatal("unable to use adaptor secret to build a valid claim transaction - we were tricked somehow")
-	}
-
-	claimTx = sia.AddSignature(claimTx, claimSig)
-	err = siaChain.BroadcastTransaction(claimTx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("Swap completed successfully with Sia claim transaction %s .\n", claimTx.ID())
-}
-
-func main2() {
-	passwordBytes, err := ioutil.ReadFile(prependHomeDirectory(defaultPasswordFile))
-	if err != nil {
-		log.Fatal(err)
-	}
-	password := strings.TrimSpace(string(passwordBytes))
-
-	//ethChain, err := ethereum.NewGanacheBlockchain()
-	endpoint := prependHomeDirectory(jsonRPCEndpoint)
-	keystoreFile := prependHomeDirectory(jsonRPCKeystoreFile)
-	ethChain, err := ethereum.NewJSONRPCBlockchain(
-		endpoint, keystoreFile, &contractAddress, *maxGasPrice, boostInterval)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	siaChain, err := sia.NewHTTPAPIBlockchain(defaultClientAddress, password)
-	if err != nil {
-		log.Fatal(err)
-	}
-	drSiaChain := sia.NewDryRunBlockchain(*siaChain)
-
-	mockTrader := mockTrader{}
-	blacklist := bob.NewBlacklist()
-	atomicSwap := bob.NewAtomicSwap(&mockTrader, ethChain, &drSiaChain, blacklist, time.Now())
-
-	nonBindingOffer, err := atomicSwap.RequestNonBindingOffer(oneSiacoin)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	consoleFrontend := alice.NewConsoleFrontend()
-	_, err = consoleFrontend.ApproveOffer(oneSiacoin, *nonBindingOffer, false)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	antiSpamID, err := rand.Int(rand.Reader, maxAntiSpamID)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("Burning anti-spam fee (id %s) and waiting for Ethereum confirmations.\n", antiSpamID.Text(10))
-	ethChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer.AntiSpamFee)
-	confDisplay := confirmationDisplay{current: -1, total: antiSpamConfirmations}
-	for {
-		confs, err := ethChain.CheckAntiSpamConfirmations(*antiSpamID, nonBindingOffer.AntiSpamFee)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		confDisplay.show(confs)
-		if confs < antiSpamConfirmations {
-			time.Sleep(10 * time.Second)
-		} else {
-			fmt.Printf("\n")
-			break
-		}
-	}
-
-	bindingOffer, err := atomicSwap.RequestBindingOffer(*antiSpamID, time.Now())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if bindingOffer.Ether.Cmp(&nonBindingOffer.Ether) != 0 {
-		_, err = consoleFrontend.ApproveOffer(oneSiacoin, *bindingOffer, true)
-	}
-
-	aliceKeypair, err := keypair.Generate()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	refundDetails, err := atomicSwap.AcceptOffer(aliceKeypair.PubKey, time.Now())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	height, err := siaChain.Height()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	minTimelock := *height + minTimelockOffset
-	if refundDetails.Timelock < minTimelock {
-		log.Fatal("proposed timelock is too short")
-	}
-
-	jointPubKey, jointPrimeKeys, err := ed25519.GenerateJointKey(
-		[]ed25519.PublicKey{aliceKeypair.PubKey, refundDetails.BobPubKey})
-	if err != nil {
-		log.Fatal(err)
-	}
-	jointUnlockConditions := sia.PubKeyUnlockConditions(jointPubKey)
-
-	refundTx := sia.BuildRefundTransaction(
-		refundDetails.FundingOutputID, jointUnlockConditions, refundDetails.BobRefundUnlockHash,
-		oneSiacoin, defaultMinerFee, refundDetails.Timelock)
-
-	refundSigHash := sia.WholeSigHash(refundTx, *height)
-	aliceRefundNoncePoint := ed25519.GenerateNoncePoint(aliceKeypair.PrivKey, refundSigHash)
-	refundSigAlice, err := keypair.JointSignAlice(aliceKeypair, refundDetails.BobPubKey,
-		[]ed25519.CurvePoint{aliceRefundNoncePoint, refundDetails.BobRefundNoncePoint}, refundSigHash)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fundingTxID, err := atomicSwap.EnableFunding(aliceRefundNoncePoint, refundSigAlice)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("\nWaiting for Sia confirmations for funding transaction %s .\n", fundingTxID)
-	confDisplay = confirmationDisplay{current: -1, total: fundingConfirmations}
-	for {
-		confs, err := drSiaChain.ConfsOfRecentUnlockHash(jointUnlockConditions.UnlockHash(), oneSiacoin.Add(defaultMinerFee))
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		confDisplay.show(confs)
-		if confs < fundingConfirmations {
-			time.Sleep(10 * time.Second)
-		} else {
-			fmt.Printf("\n\n")
-			break
-		}
-	}
-
-	aliceClaimUnlockHash, err := siaChain.NextWalletUnlockHash()
-	if err != nil {
-		log.Fatal(err)
-	}
-	claimTx := sia.BuildClaimTransaction(
-		refundDetails.FundingOutputID, jointUnlockConditions, *aliceClaimUnlockHash,
-		oneSiacoin, defaultMinerFee)
-	claimSigHash := sia.WholeSigHash(claimTx, *height)
-	aliceClaimNoncePoint := ed25519.GenerateNoncePoint(aliceKeypair.PrivKey, claimSigHash)
-
-	adaptorDetails, err := atomicSwap.RequestAdaptorDetails(*aliceClaimUnlockHash, aliceClaimNoncePoint)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	adaptorSigOK := keypair.VerifyBobsAdaptorSignature(
-		jointPrimeKeys, jointPubKey, []ed25519.CurvePoint{aliceClaimNoncePoint, adaptorDetails.BobClaimNoncePoint},
-		adaptorDetails.AdaptorPubKey, claimSigHash, adaptorDetails.AdaptorSigBob)
-	if !adaptorSigOK {
-		log.Fatal("unable to verify adaptor signature")
-	}
-
-	fmt.Printf("Depositing payment and waiting for Ethereum confirmations.\n")
-	ethChain.DepositEther(adaptorDetails.DepositRecipient, adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
-	confDisplay = confirmationDisplay{current: -1, total: depositConfirmations}
-	for {
-		confs, err := ethChain.CheckDepositConfirmations(
-			adaptorDetails.DepositRecipient, adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		confDisplay.show(confs)
-		if confs < depositConfirmations {
-			time.Sleep(10 * time.Second)
-		} else {
-			fmt.Printf("\n\n")
-			break
-		}
-	}
-
-	err = atomicSwap.AnnounceDeposit()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("Waiting for other party to claim deposit and reveal adaptor secret.\n")
-	var ok bool
-	var adaptorPrivKey *ed25519.Adaptor
-	for {
-		ok, adaptorPrivKey, err = ethChain.LookupAdaptorPrivKey(adaptorDetails.AdaptorPubKey)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if !ok {
-			time.Sleep(10 * time.Second)
-		} else {
-			break
-		}
-	}
-
-	fmt.Printf("Using adaptor secret to build a valid claim transaction and broadcast it.\n")
-
-	noncePoints := []ed25519.CurvePoint{aliceClaimNoncePoint, adaptorDetails.BobClaimNoncePoint}
-	adaptorSigAlice, err := keypair.JointSignWithAdaptorAlice(
-		aliceKeypair, refundDetails.BobPubKey, noncePoints, adaptorDetails.AdaptorPubKey, claimSigHash)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	claimSig := ed25519.AddSignature(adaptorSigAlice, adaptorDetails.AdaptorSigBob)
-	claimSig = ed25519.AddSignature(claimSig, append(adaptorDetails.AdaptorPubKey, *adaptorPrivKey...))
-
-	claimSigOK := ed25519.Verify(jointPubKey, claimSigHash, claimSig)
-	if !claimSigOK {
-		log.Fatal("unable to use adaptor secret to build a valid claim transaction - we were tricked somehow")
-	}
-
-	claimTx = sia.AddSignature(claimTx, claimSig)
-	err = drSiaChain.BroadcastTransaction(claimTx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("Swap completed successfully with Sia claim transaction %s .\n", claimTx.ID())
-
-	atomicSwap.Rollback()
 }

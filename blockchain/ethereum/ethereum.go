@@ -1,7 +1,7 @@
 package ethereum
 
 import (
-	"crypto/ecdsa"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -11,9 +11,11 @@ import (
 
 	"github.com/HyperspaceApp/ed25519"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -22,27 +24,29 @@ import (
 )
 
 const (
-	formatEtherPrecision = 6
-	smallGasLimit        = 100000
-	mediumGasLimit       = 200000
-	largeGasLimit        = 1500000
-	ganacheEndpoint      = "http://127.0.0.1:8545"
-	ganachePrivKey       = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
-	ganacheBoostInterval = 5 * time.Second
+	formatEtherPrecision   = 6
+	smallGasLimit          = 100000
+	mediumGasLimit         = 200000
+	largeGasLimit          = 1500000
+	ganacheEndpoint        = "http://127.0.0.1:8545"
+	ganachePrivKey         = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
+	ganacheBoostInterval   = 5 * time.Second
+	simulatedPrivKey       = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
+	simulatedBlockInterval = 500 * time.Millisecond
 )
 
 var (
-	ErrCasting = errors.New("error casting public key to ECDSA")
+	ErrStillSyncing = errors.New("Ethereum node is still syncing")
 
 	gwei               = big.NewInt(1e9)
 	oneEther           = big.NewInt(1e18)
 	ganacheMaxGasPrice = new(big.Int).Mul(big.NewInt(100), gwei)
+	simulatedBalance   = new(big.Int).Mul(big.NewInt(100), oneEther)
+	simulatedGasLimit  = uint64(10000000)
 )
 
 type (
-	JSONRPCBlockchain struct {
-		client        ethclient.Client
-		privKey       ecdsa.PrivateKey
+	GethBlockchain struct {
 		walletAddress common.Address
 		retryingHub   retryinghub.RetryingHub
 	}
@@ -58,7 +62,7 @@ type (
 	}
 )
 
-func NewGanacheBlockchain() (*JSONRPCBlockchain, error) {
+func NewGanacheBlockchain() (*GethBlockchain, error) {
 	client, err := ethclient.Dial(ganacheEndpoint)
 	if err != nil {
 		return nil, err
@@ -68,13 +72,7 @@ func NewGanacheBlockchain() (*JSONRPCBlockchain, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	pubKey := privKeyECDSA.Public()
-	pubKeyECDSA, ok := pubKey.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, ErrCasting
-	}
-	walletAddress := crypto.PubkeyToAddress(*pubKeyECDSA)
+	walletAddress := crypto.PubkeyToAddress(privKeyECDSA.PublicKey)
 
 	auth := bind.NewKeyedTransactor(privKeyECDSA)
 	_, _, hub, err := contract.DeployHub(auth, client)
@@ -83,22 +81,60 @@ func NewGanacheBlockchain() (*JSONRPCBlockchain, error) {
 	}
 
 	retryingHub := retryinghub.New(
-		*ganacheMaxGasPrice, ganacheBoostInterval, *client, *privKeyECDSA, walletAddress, *hub)
+		*ganacheMaxGasPrice, ganacheBoostInterval, client, *privKeyECDSA, walletAddress, hub)
 
-	c := JSONRPCBlockchain{
-		client:        *client,
-		privKey:       *privKeyECDSA,
+	c := GethBlockchain{
 		walletAddress: walletAddress,
 		retryingHub:   retryingHub,
 	}
 	return &c, nil
 }
 
-func NewJSONRPCBlockchain(endpoint string, keystoreFile string, contractAddress *common.Address,
-	maxGasPrice big.Int, boostInterval time.Duration) (*JSONRPCBlockchain, error) {
+func NewSimulatedBlockchain() (*GethBlockchain, error) {
+	privKeyECDSA, err := crypto.HexToECDSA(simulatedPrivKey)
+	if err != nil {
+		return nil, err
+	}
+	walletAddress := crypto.PubkeyToAddress(privKeyECDSA.PublicKey)
+
+	backend := backends.NewSimulatedBackend(
+		core.GenesisAlloc{walletAddress: {Balance: simulatedBalance}}, simulatedGasLimit)
+	go func() {
+		for {
+			time.Sleep(simulatedBlockInterval)
+			backend.Commit()
+		}
+	}()
+
+	auth := bind.NewKeyedTransactor(privKeyECDSA)
+	_, _, hub, err := contract.DeployHub(auth, backend)
+	if err != nil {
+		return nil, err
+	}
+
+	retryingHub := retryinghub.New(
+		*ganacheMaxGasPrice, ganacheBoostInterval, backend, *privKeyECDSA, walletAddress, hub)
+
+	c := GethBlockchain{
+		walletAddress: walletAddress,
+		retryingHub:   retryingHub,
+	}
+	return &c, nil
+}
+
+func NewLocalNodeBlockchain(endpoint string, keystoreFile string, contractAddress *common.Address,
+	maxGasPrice big.Int, boostInterval time.Duration) (*GethBlockchain, error) {
 	client, err := ethclient.Dial(endpoint)
 	if err != nil {
 		return nil, err
+	}
+
+	syncProgress, err := client.SyncProgress(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	if syncProgress != nil {
+		return nil, ErrStillSyncing
 	}
 
 	json, err := ioutil.ReadFile(keystoreFile)
@@ -110,13 +146,7 @@ func NewJSONRPCBlockchain(endpoint string, keystoreFile string, contractAddress 
 	if err != nil {
 		return nil, err
 	}
-
-	pubKey := key.PrivateKey.Public()
-	pubKeyECDSA, ok := pubKey.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, ErrCasting
-	}
-	walletAddress := crypto.PubkeyToAddress(*pubKeyECDSA)
+	walletAddress := key.Address
 
 	var hub *contract.Hub
 	if contractAddress != nil {
@@ -133,28 +163,26 @@ func NewJSONRPCBlockchain(endpoint string, keystoreFile string, contractAddress 
 	}
 
 	retryingHub := retryinghub.New(
-		maxGasPrice, boostInterval, *client, *key.PrivateKey, walletAddress, *hub)
+		maxGasPrice, boostInterval, client, *key.PrivateKey, walletAddress, hub)
 
-	c := JSONRPCBlockchain{
-		client:        *client,
-		privKey:       *key.PrivateKey,
-		walletAddress: key.Address,
+	c := GethBlockchain{
+		walletAddress: walletAddress,
 		retryingHub:   retryingHub,
 	}
 	return &c, nil
 }
 
-func (c *JSONRPCBlockchain) BurnAntiSpamFee(antiSpamID big.Int, antiSpamFee big.Int) error {
+func (c *GethBlockchain) BurnAntiSpamFee(antiSpamID big.Int, antiSpamFee big.Int) error {
 	hashedID := hash(antiSpamID)
 	c.retryingHub.BurnAntiSpamFee(hashedID, &antiSpamFee, smallGasLimit)
 	return nil
 }
 
-func (c *JSONRPCBlockchain) CheckAntiSpamConfirmations(antiSpamID big.Int, antiSpamFee big.Int) (int64, error) {
+func (c *GethBlockchain) CheckAntiSpamConfirmations(antiSpamID big.Int, antiSpamFee big.Int) (int64, error) {
 	confs := c.retryingHub.CheckAntiSpamConfirmations(&antiSpamID, &antiSpamFee)
 	return confs.Int64(), nil
 }
-func (c *JSONRPCBlockchain) DepositEther(
+func (c *GethBlockchain) DepositEther(
 	recipient common.Address, adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) error {
 	hashedID := hash(antiSpamID)
 
@@ -166,7 +194,7 @@ func (c *JSONRPCBlockchain) DepositEther(
 	return nil
 }
 
-func (c *JSONRPCBlockchain) CheckDepositConfirmations(
+func (c *GethBlockchain) CheckDepositConfirmations(
 	recipient common.Address, adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) (int64, error) {
 	hashedID := hash(antiSpamID)
 
@@ -178,13 +206,13 @@ func (c *JSONRPCBlockchain) CheckDepositConfirmations(
 	return confs.Int64(), nil
 }
 
-func (c *JSONRPCBlockchain) ClaimDeposit(adaptorPrivKey ed25519.Adaptor, antiSpamID big.Int) error {
+func (c *GethBlockchain) ClaimDeposit(adaptorPrivKey ed25519.Adaptor, antiSpamID big.Int) error {
 	adaptorPrivKeyBigInt := new(big.Int).SetBytes(switchEndianness(adaptorPrivKey[:]))
 	c.retryingHub.ClaimDeposit(adaptorPrivKeyBigInt, &antiSpamID, big.NewInt(0), largeGasLimit)
 	return nil
 }
 
-func (c *JSONRPCBlockchain) LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) (bool, *ed25519.Adaptor, error) {
+func (c *GethBlockchain) LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) (bool, *ed25519.Adaptor, error) {
 	adaptorPubKeyBytes := switchEndianness(adaptorPubKey[:])
 	adaptorPubKeyBytes[0] &= 127 // clear sign bit
 	adaptorPubKeyBigInt := new(big.Int).SetBytes(adaptorPubKeyBytes)
@@ -198,7 +226,7 @@ func (c *JSONRPCBlockchain) LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoin
 	return true, &adaptorPrivKey, nil
 }
 
-func (c *JSONRPCBlockchain) WalletAddress() common.Address {
+func (c *GethBlockchain) WalletAddress() common.Address {
 	return c.walletAddress
 }
 

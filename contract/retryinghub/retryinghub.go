@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jpillora/backoff"
 
 	contract "github.com/javgh/roadie/contract/hub"
@@ -27,13 +26,18 @@ const (
 )
 
 type (
+	Backend interface {
+		bind.ContractBackend
+		NonceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (uint64, error)
+	}
+
 	RetryingHub struct {
 		maxGasPrice   big.Int
 		boostInterval time.Duration
-		client        ethclient.Client
+		backend       Backend
 		privKey       ecdsa.PrivateKey
 		walletAddress common.Address
-		hub           contract.Hub
+		hub           *contract.Hub
 	}
 
 	blockchainReader func() (interface{}, error)
@@ -41,12 +45,12 @@ type (
 )
 
 func New(maxGasPrice big.Int, boostInterval time.Duration,
-	client ethclient.Client, privKey ecdsa.PrivateKey, walletAddress common.Address,
-	hub contract.Hub) RetryingHub {
+	backend Backend, privKey ecdsa.PrivateKey, walletAddress common.Address,
+	hub *contract.Hub) RetryingHub {
 	h := RetryingHub{
 		maxGasPrice:   maxGasPrice,
 		boostInterval: boostInterval,
-		client:        client,
+		backend:       backend,
 		privKey:       privKey,
 		walletAddress: walletAddress,
 		hub:           hub,
@@ -126,7 +130,7 @@ func (h *RetryingHub) robustWrite(writer blockchainWriter, value *big.Int, gasLi
 	b := newBackoff()
 
 	nonceBefore := robustRead(func() (interface{}, error) {
-		return h.client.NonceAt(context.Background(), h.walletAddress, nil)
+		return h.backend.NonceAt(context.Background(), h.walletAddress, nil)
 	})
 	nonce := new(big.Int).SetUint64(nonceBefore.(uint64))
 
@@ -157,7 +161,7 @@ func (h *RetryingHub) robustWrite(writer blockchainWriter, value *big.Int, gasLi
 			time.Sleep(txCheckInterval)
 
 			nonceNow := robustRead(func() (interface{}, error) {
-				return h.client.NonceAt(context.Background(), h.walletAddress, nil)
+				return h.backend.NonceAt(context.Background(), h.walletAddress, nil)
 			})
 
 			if nonceBefore.(uint64) != nonceNow.(uint64) { // one of our transactions confirmed

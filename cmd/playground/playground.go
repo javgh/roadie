@@ -117,10 +117,11 @@ func prependHomeDirectory(path string) string {
 }
 
 func main() {
-	ethChain, err := ethereum.NewGanacheBlockchain()
+	//ethChain, err := ethereum.NewGanacheBlockchain()
+	ethChain, err := ethereum.NewSimulatedBlockchain()
 	//endpoint := prependHomeDirectory(jsonRPCEndpoint)
 	//keystoreFile := prependHomeDirectory(jsonRPCKeystoreFile)
-	//ethChain, err := ethereum.NewJSONRPCBlockchain(
+	//ethChain, err := ethereum.NewLocalNodeBlockchain(
 	//	endpoint, keystoreFile, &contractAddress, *maxGasPrice, boostInterval)
 	if err != nil {
 		log.Fatal(err)

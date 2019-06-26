@@ -4,13 +4,16 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/big"
+	"time"
 
 	"github.com/HyperspaceApp/ed25519"
 	"gitlab.com/NebulousLabs/Sia/crypto"
 	"gitlab.com/NebulousLabs/Sia/encoding"
 	"gitlab.com/NebulousLabs/Sia/modules"
 	"gitlab.com/NebulousLabs/Sia/node/api/client"
+	"gitlab.com/NebulousLabs/Sia/siatest"
 	"gitlab.com/NebulousLabs/Sia/types"
 )
 
@@ -39,7 +42,8 @@ type (
 )
 
 const (
-	recentBlocks = 6
+	recentBlocks           = 6
+	simulatedBlockInterval = 5 * time.Second
 )
 
 var (
@@ -47,7 +51,29 @@ var (
 	ErrInsufficientFunds = errors.New("insufficient funds")
 )
 
-func NewHTTPAPIBlockchain(address string, password string) (*HTTPAPIBlockchain, error) {
+func NewSimulatedBlockchain() (*HTTPAPIBlockchain, error) {
+	dir, err := ioutil.TempDir("", "roadie")
+	if err != nil {
+		return nil, err
+	}
+
+	node, err := siatest.NewNode(siatest.Miner(dir))
+	if err != nil {
+		return nil, err
+	}
+
+	go func() {
+		for {
+			time.Sleep(simulatedBlockInterval)
+			node.MineBlock()
+		}
+	}()
+
+	c := HTTPAPIBlockchain{httpClient: node.Client}
+	return &c, nil
+}
+
+func NewLocalNodeBlockchain(address string, password string) (*HTTPAPIBlockchain, error) {
 	c := HTTPAPIBlockchain{}
 	c.httpClient.Address = address
 	c.httpClient.Password = password

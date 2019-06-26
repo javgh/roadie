@@ -1,12 +1,12 @@
 package main
 
 import (
-	"io/ioutil"
+	//"io/ioutil"
 	"log"
 	"math/big"
 	"os/user"
 	"path/filepath"
-	"strings"
+	//"strings"
 	"time"
 
 	"github.com/HyperspaceApp/ed25519"
@@ -127,17 +127,18 @@ func main() {
 		log.Fatal(err)
 	}
 
-	passwordBytes, err := ioutil.ReadFile(prependHomeDirectory(defaultPasswordFile))
-	if err != nil {
-		log.Fatal(err)
-	}
-	password := strings.TrimSpace(string(passwordBytes))
+	//passwordBytes, err := ioutil.ReadFile(prependHomeDirectory(defaultPasswordFile))
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//password := strings.TrimSpace(string(passwordBytes))
 
-	siaChain, err := sia.NewHTTPAPIBlockchain(defaultClientAddress, password)
+	siaChain, err := sia.NewSimulatedBlockchain()
+	//siaChain, err := sia.NewLocalNodeBlockchain(defaultClientAddress, password)
 	if err != nil {
 		log.Fatal(err)
 	}
-	drSiaChain := sia.NewDryRunBlockchain(*siaChain)
+	drSiaChain := *siaChain //sia.NewDryRunBlockchain(*siaChain)
 
 	//if len(os.Args) == 1 {
 	//	server(ethChain)

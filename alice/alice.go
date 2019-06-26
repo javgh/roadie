@@ -271,12 +271,12 @@ func PerformSwap(siacoin types.Currency, frontend Frontend,
 		}
 	}
 
+	fmt.Printf("Announcing deposit and waiting for other party to claim it and reveal adaptor secret.\n")
 	err = roadieClient.AnnounceDeposit(*id)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Waiting for other party to claim deposit and reveal adaptor secret.\n")
 	var ok bool
 	var adaptorPrivKey *ed25519.Adaptor
 	for {

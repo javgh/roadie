@@ -25,6 +25,7 @@ import (
 
 const (
 	formatEtherPrecision   = 6
+	formatGweiPrecision    = 1
 	smallGasLimit          = 100000
 	mediumGasLimit         = 200000
 	largeGasLimit          = 1500000
@@ -47,6 +48,7 @@ var (
 
 type (
 	GethBlockchain struct {
+		backend       bind.ContractBackend
 		walletAddress common.Address
 		retryingHub   retryinghub.RetryingHub
 	}
@@ -59,6 +61,7 @@ type (
 		ClaimDeposit(adaptorPrivKey ed25519.Adaptor, antiSpamID big.Int) error
 		LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) (bool, *ed25519.Adaptor, error)
 		WalletAddress() common.Address
+		SuggestGasPrice() (*big.Int, error)
 	}
 )
 
@@ -84,6 +87,7 @@ func NewGanacheBlockchain() (*GethBlockchain, error) {
 		*ganacheMaxGasPrice, ganacheBoostInterval, client, *privKeyECDSA, walletAddress, hub)
 
 	c := GethBlockchain{
+		backend:       client,
 		walletAddress: walletAddress,
 		retryingHub:   retryingHub,
 	}
@@ -116,6 +120,7 @@ func NewSimulatedBlockchain() (*GethBlockchain, error) {
 		*ganacheMaxGasPrice, ganacheBoostInterval, backend, *privKeyECDSA, walletAddress, hub)
 
 	c := GethBlockchain{
+		backend:       backend,
 		walletAddress: walletAddress,
 		retryingHub:   retryingHub,
 	}
@@ -166,6 +171,7 @@ func NewLocalNodeBlockchain(endpoint string, keystoreFile string, contractAddres
 		maxGasPrice, boostInterval, client, *key.PrivateKey, walletAddress, hub)
 
 	c := GethBlockchain{
+		backend:       client,
 		walletAddress: walletAddress,
 		retryingHub:   retryingHub,
 	}
@@ -230,6 +236,10 @@ func (c *GethBlockchain) WalletAddress() common.Address {
 	return c.walletAddress
 }
 
+func (c *GethBlockchain) SuggestGasPrice() (*big.Int, error) {
+	return c.backend.SuggestGasPrice(context.Background())
+}
+
 func switchEndianness(in []byte) []byte {
 	out := make([]byte, len(in))
 	for i := range in {
@@ -247,8 +257,13 @@ func FormatEther(ether *big.Int) string {
 	return fmt.Sprintf("%s ETH", r.FloatString(formatEtherPrecision))
 }
 
-func ApplyRate(ether *big.Int, rate *big.Float) *big.Float {
-	r := new(big.Rat).SetFrac(ether, oneEther)
-	f := new(big.Float).Mul(new(big.Float).SetRat(r), rate)
-	return f
+func FormatGwei(ether *big.Int) string {
+	r := big.NewRat(0, 1).SetFrac(ether, gwei)
+	return fmt.Sprintf("%s Gwei", r.FloatString(formatGweiPrecision))
+}
+
+func ApplyRate(ether *big.Int, rate *big.Rat) *big.Rat {
+	etherRat := new(big.Rat).SetFrac(ether, oneEther)
+	result := new(big.Rat).Mul(etherRat, rate)
+	return result
 }

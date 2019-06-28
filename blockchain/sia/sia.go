@@ -308,8 +308,8 @@ func EncodeTransaction(tx types.Transaction) string {
 	return base64.StdEncoding.EncodeToString(encoding.Marshal(tx))
 }
 
-func ApplyRate(siacoin types.Currency, rate *big.Float) *big.Float {
-	r := new(big.Rat).SetFrac(siacoin.Big(), types.SiacoinPrecision.Big())
-	f := new(big.Float).Mul(new(big.Float).SetRat(r), rate)
-	return f
+func ApplyRate(siacoin types.Currency, rate *big.Rat) *big.Rat {
+	siacoinRat := new(big.Rat).SetFrac(siacoin.Big(), types.SiacoinPrecision.Big())
+	result := new(big.Rat).Mul(siacoinRat, rate)
+	return result
 }

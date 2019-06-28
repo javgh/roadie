@@ -1,12 +1,13 @@
 package main
 
 import (
-	//"io/ioutil"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"math/big"
 	"os/user"
 	"path/filepath"
-	//"strings"
+	"strings"
 	"time"
 
 	"github.com/HyperspaceApp/ed25519"
@@ -127,28 +128,31 @@ func main() {
 		log.Fatal(err)
 	}
 
-	//passwordBytes, err := ioutil.ReadFile(prependHomeDirectory(defaultPasswordFile))
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//password := strings.TrimSpace(string(passwordBytes))
-
-	siaChain, err := sia.NewSimulatedBlockchain()
-	//siaChain, err := sia.NewLocalNodeBlockchain(defaultClientAddress, password)
+	passwordBytes, err := ioutil.ReadFile(prependHomeDirectory(defaultPasswordFile))
 	if err != nil {
 		log.Fatal(err)
 	}
-	drSiaChain := *siaChain //sia.NewDryRunBlockchain(*siaChain)
+	password := strings.TrimSpace(string(passwordBytes))
 
-	//if len(os.Args) == 1 {
-	//	server(ethChain)
-	//} else {
-	//	client(ethChain)
-	//}
+	//siaChain, err := sia.NewSimulatedBlockchain()
+	siaChain, err := sia.NewLocalNodeBlockchain(defaultClientAddress, password)
+	if err != nil {
+		log.Fatal(err)
+	}
+	drSiaChain := sia.NewDryRunBlockchain(*siaChain)
 
-	go server(ethChain, &drSiaChain)
-	time.Sleep(2 * time.Second)
-	client(ethChain, &drSiaChain)
+	//go server(ethChain, &drSiaChain)
+	//time.Sleep(2 * time.Second)
+	//client(ethChain, &drSiaChain)
+
+	trader := trader.NewFixedPremiumTrader(nil, *defaultAntiSpamFee, ethChain, &drSiaChain)
+
+	offer, err := trader.PrepareNonBindingOffer(oneSiacoin, oneSiacoin)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Print(offer.Msg)
+	fmt.Println(ethereum.FormatEther(&offer.Ether))
 }
 
 func server(ethChain ethereum.Blockchain, siaChain sia.Blockchain) {

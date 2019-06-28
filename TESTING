@@ -1,4 +1,4 @@
-Integration test: go test -tags testing ./integration
+Integration test: go test -v -tags testing ./integration
 
 Coverage:
   go test -tags testing -coverprofile=/tmp/coverage.out -covermode=atomic -coverpkg=./... ./integration

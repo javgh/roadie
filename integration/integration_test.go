@@ -15,48 +15,15 @@ import (
 	"github.com/javgh/roadie/trader"
 )
 
-type (
-	mockTrader struct{}
-)
-
 const (
-	bindingOfferLifetime = 1 * time.Minute
-	serverNetwork        = "tcp"
-	serverAddress        = "localhost:9000"
+	serverNetwork = "tcp"
+	serverAddress = "localhost:9000"
 )
 
 var (
 	oneSiacoin         = types.SiacoinPrecision
-	finney             = big.NewInt(1e15)
 	defaultAntiSpamFee = big.NewInt(1e14)
 )
-
-func (mt *mockTrader) PrepareNonBindingOffer(siacoin types.Currency, minerFee types.Currency) (*trader.Offer, error) {
-	offer := trader.Offer{
-		Msg:         "integration test offer",
-		Available:   true,
-		Ether:       *finney,
-		AntiSpamFee: *defaultAntiSpamFee,
-	}
-	return &offer, nil
-}
-
-func (mt *mockTrader) PrepareBindingOffer(siacoin types.Currency, minerFee types.Currency,
-	now time.Time) (*trader.Offer, *time.Time, error) {
-	offer, err := mt.PrepareNonBindingOffer(siacoin, minerFee)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	deadline := now.Add(bindingOfferLifetime)
-	return offer, &deadline, nil
-}
-
-func (mt *mockTrader) PauseOrderPreparation(now time.Time) {
-}
-
-func (mt *mockTrader) ResumeOrderPreparation() {
-}
 
 func TestIntegration(t *testing.T) {
 	ethChain, err := ethereum.NewSimulatedBlockchain()
@@ -75,11 +42,11 @@ func TestIntegration(t *testing.T) {
 }
 
 func server(t *testing.T, ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
-	mockTrader := mockTrader{}
+	trader := trader.NewFixedPremiumTrader(nil, *defaultAntiSpamFee, ethChain, siaChain)
 	blacklist := bob.NewBlacklist()
 
 	newAtomicSwap := func(now time.Time) *bob.AtomicSwap {
-		return bob.NewAtomicSwap(&mockTrader, ethChain, siaChain, blacklist, now)
+		return bob.NewAtomicSwap(&trader, ethChain, siaChain, blacklist, now)
 	}
 	bobServer, err := rpc.NewBobServer(serverNetwork, serverAddress, "", "", newAtomicSwap)
 	if err != nil {

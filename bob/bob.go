@@ -124,12 +124,12 @@ func NewAtomicSwap(trader trader.Trader, ethChain ethereum.Blockchain, siaChain 
 	return &atomicSwap
 }
 
-func (s *AtomicSwap) RequestNonBindingOffer(siacoin types.Currency) (*trader.Offer, error) {
+func (s *AtomicSwap) RequestNonBindingOffer(siacoin types.Currency, now time.Time) (*trader.Offer, error) {
 	if s.state != stateInitialized {
 		return nil, ErrWrongState
 	}
 
-	offer, err := s.trader.PrepareNonBindingOffer(siacoin, defaultMinerFee)
+	offer, err := s.trader.PrepareNonBindingOffer(siacoin, defaultMinerFee, now)
 	if err != nil {
 		return nil, err
 	}
@@ -286,6 +286,7 @@ func (s *AtomicSwap) EnableFunding(aliceRefundNoncePoint ed25519.CurvePoint, ref
 		return nil, err
 	}
 	fundingTxID := s.fundingTx.ID()
+	s.trader.ResumeOrderPreparation()
 
 	s.state = stateFunded
 	return &fundingTxID, nil

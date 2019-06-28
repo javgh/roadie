@@ -117,7 +117,7 @@ func (s *BobServer) RequestNonBindingOffer(req *RNBORequest) (*RNBOResponse, err
 	atomicSwap := s.newAtomicSwap(time.Now())
 	s.atomicSwaps[atomicSwap.ID] = atomicSwap
 
-	resp.Offer, err = atomicSwap.RequestNonBindingOffer(req.Siacoin)
+	resp.Offer, err = atomicSwap.RequestNonBindingOffer(req.Siacoin, time.Now())
 	if err != nil {
 		return nil, err
 	}

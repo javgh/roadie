@@ -25,16 +25,18 @@ type (
 	}
 
 	FixedPremiumTrader struct {
-		premiumUSD   *big.Rat
-		antiSpamFee  big.Int
-		exchangeRate ExchangeRate
-		paused       bool
-		ethChain     ethereum.Blockchain
-		siaChain     sia.Blockchain
+		premiumUSD    *big.Rat
+		antiSpamFee   big.Int
+		exchangeRate  ExchangeRate
+		paused        bool
+		pauseDeadline *time.Time
+		ethChain      ethereum.Blockchain
+		siaChain      sia.Blockchain
 	}
 
 	Trader interface {
-		PrepareNonBindingOffer(siacoin types.Currency, minerFee types.Currency) (offer *Offer, err error)
+		PrepareNonBindingOffer(siacoin types.Currency, minerFee types.Currency,
+			now time.Time) (offer *Offer, err error)
 		PrepareBindingOffer(siacoin types.Currency, minerFee types.Currency,
 			now time.Time) (offer *Offer, deadline *time.Time, err error)
 		PauseOrderPreparation(now time.Time)
@@ -57,12 +59,14 @@ const (
 	formatUSDPrecision   = 4
 
 	msgPaused = "The server is currently in a critical phase of another swap and not ready to make an offer.\n" +
-		"Please try again later.\n"
-	msgTooSmall = "The minimum amount is %s.\n"
-	msgTooLarge = "Insufficient funds to make an offer.\n"
-	msgOffer    = "Please note that this offer is also influenced by the current Ethereum gas price of %s.\n"
+		"Please try again later."
+	msgTooSmall = "The minimum amount is %s."
+	msgTooLarge = "Insufficient funds to make an offer."
+	msgOffer    = "This offer includes %s (~ %s) of fixed Ethereum\n" +
+		"transaction fees based on a current gas price of %s."
 
-	gasEstimate = 500000
+	bindingOfferLifetime = 1 * time.Minute
+	gasEstimate          = 500000
 )
 
 var (
@@ -93,42 +97,74 @@ func NewFixedPremiumTrader(premiumUSD *big.Rat, antiSpamFee big.Int,
 	}
 }
 
-func (t *FixedPremiumTrader) PrepareNonBindingOffer(siacoin types.Currency, minerFee types.Currency) (*Offer, error) {
+func (t *FixedPremiumTrader) PrepareNonBindingOffer(siacoin types.Currency, minerFee types.Currency,
+	now time.Time) (*Offer, error) {
+	t.checkPauseDeadline(now)
+	offer, _, err := t.prepareOffer(siacoin, minerFee, now, false)
+	return offer, err
+}
+
+func (t *FixedPremiumTrader) PrepareBindingOffer(siacoin types.Currency, minerFee types.Currency,
+	now time.Time) (*Offer, *time.Time, error) {
+	t.checkPauseDeadline(now)
+	return t.prepareOffer(siacoin, minerFee, now, true)
+}
+
+func (t *FixedPremiumTrader) PauseOrderPreparation(now time.Time) {
+	deadline := now.Add(bindingOfferLifetime)
+	t.paused = true
+	t.pauseDeadline = &deadline
+}
+
+func (t *FixedPremiumTrader) ResumeOrderPreparation() {
+	t.paused = false
+}
+
+func (t *FixedPremiumTrader) checkPauseDeadline(now time.Time) {
+	if t.pauseDeadline != nil && now.After(*t.pauseDeadline) {
+		t.paused = false
+		t.pauseDeadline = nil
+	}
+}
+
+func (t *FixedPremiumTrader) prepareOffer(siacoin types.Currency, minerFee types.Currency,
+	now time.Time, binding bool) (*Offer, *time.Time, error) {
 	offer := Offer{
 		Msg:         "",
 		Available:   false,
 		Ether:       *big.NewInt(0),
 		AntiSpamFee: t.antiSpamFee,
 	}
+	deadline := now.Add(bindingOfferLifetime)
 
 	if t.paused {
 		offer.Msg = msgPaused
-		return &offer, nil
+		return &offer, &deadline, nil
 	}
 
 	if siacoin.Cmp(minSiacoin) == -1 {
 		offer.Msg = fmt.Sprintf(msgTooSmall, minSiacoin.HumanString())
-		return &offer, nil
+		return &offer, &deadline, nil
 	}
 
 	siacoinBalance, err := t.calculateSiacoinBalance()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if siacoin.Cmp(*siacoinBalance) != -1 {
 		offer.Msg = msgTooLarge
-		return &offer, nil
+		return &offer, &deadline, nil
 	}
 
 	usdEther, err := t.exchangeRate.Fetch("ethereum")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	usdSiacoin, err := t.exchangeRate.Fetch("siacoin")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	siacoinAndFees := siacoin.Add(minerFee).Add(minerFee)
@@ -139,16 +175,18 @@ func (t *FixedPremiumTrader) PrepareNonBindingOffer(siacoin types.Currency, mine
 
 	gasPrice, err := t.ethChain.SuggestGasPrice()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	contractCost := new(big.Int).Mul(big.NewInt(gasEstimate), gasPrice)
+	contractCostUSD := ethereum.ApplyRate(contractCost, usdEther)
 	ether.Add(ether, contractCost)
 
-	offer.Msg = fmt.Sprintf(msgOffer, ethereum.FormatGwei(gasPrice))
+	offer.Msg = fmt.Sprintf(msgOffer, ethereum.FormatEther(contractCost),
+		FormatUSD(contractCostUSD), ethereum.FormatGwei(gasPrice))
 	offer.Available = true
 	offer.Ether = *ether
 
-	return &offer, nil
+	return &offer, &deadline, nil
 }
 
 func (t *FixedPremiumTrader) calculateSiacoinBalance() (*types.Currency, error) {

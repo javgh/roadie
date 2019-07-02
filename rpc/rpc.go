@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"math/big"
 	"net"
+	"sort"
 	"sync"
 	"time"
 
@@ -117,6 +119,8 @@ func (s *BobServer) RequestNonBindingOffer(req *RNBORequest) (*RNBOResponse, err
 	atomicSwap := s.newAtomicSwap(time.Now())
 	s.atomicSwaps[atomicSwap.ID] = atomicSwap
 
+	log.Printf("[%s] RequestNonBindingOffer; %s\n", atomicSwap.ID, req.Siacoin.HumanString())
+
 	resp.Offer, err = atomicSwap.RequestNonBindingOffer(req.Siacoin, time.Now())
 	if err != nil {
 		return nil, err
@@ -164,6 +168,8 @@ func (s *BobServer) RequestBindingOffer(req *RBORequest) (*RBOResponse, error) {
 		return nil, ErrUnknownID
 	}
 
+	log.Printf("[%s] RequestBindingOffer; %s\n", atomicSwap.ID, req.AntiSpamID.String())
+
 	resp.Offer, err = atomicSwap.RequestBindingOffer(req.AntiSpamID, time.Now())
 	if err != nil {
 		return nil, err
@@ -209,6 +215,8 @@ func (s *BobServer) AcceptOffer(req *AORequest) (*AOResponse, error) {
 	if !ok {
 		return nil, ErrUnknownID
 	}
+
+	log.Printf("[%s] AcceptOffer\n", atomicSwap.ID)
 
 	resp.RefundDetails, err = atomicSwap.AcceptOffer(req.AlicePubKey, time.Now())
 	if err != nil {
@@ -257,6 +265,8 @@ func (s *BobServer) EnableFunding(req *EFRequest) (*EFResponse, error) {
 		return nil, ErrUnknownID
 	}
 
+	log.Printf("[%s] EnableFunding\n", atomicSwap.ID)
+
 	resp.TxID, err = atomicSwap.EnableFunding(req.AliceRefundNoncePoint, req.RefundSigAlice)
 	if err != nil {
 		return nil, err
@@ -304,6 +314,8 @@ func (s *BobServer) RequestAdaptorDetails(req *RADRequest) (*RADResponse, error)
 		return nil, ErrUnknownID
 	}
 
+	log.Printf("[%s] RequestAdaptorDetails\n", atomicSwap.ID)
+
 	resp.AdaptorDetails, err = atomicSwap.RequestAdaptorDetails(req.AliceClaimUnlockHash, req.AliceClaimNoncePoint)
 	if err != nil {
 		return nil, err
@@ -346,6 +358,8 @@ func (s *BobServer) AnnounceDeposit(req *ADRequest) (*ADResponse, error) {
 	if !ok {
 		return nil, ErrUnknownID
 	}
+
+	log.Printf("[%s] AnnounceDeposit\n", atomicSwap.ID)
 
 	err = atomicSwap.AnnounceDeposit()
 	if err != nil {
@@ -400,6 +414,22 @@ func NewBobServer(network string, address string, certFile string, keyFile strin
 
 func (s *BobServer) Serve() error {
 	return s.grpcServer.Serve(s.listener)
+}
+
+func (s *BobServer) Report() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	var keys []string
+	for k := range s.atomicSwaps {
+		keys = append(keys, k.String())
+	}
+
+	sort.Strings(keys)
+	for _, uuidStr := range keys {
+		k := uuid.Must(uuid.FromString(uuidStr))
+		log.Printf("State of %s: %s\n", k, s.atomicSwaps[k].StateText())
+	}
 }
 
 type Client struct {

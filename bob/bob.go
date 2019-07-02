@@ -365,3 +365,24 @@ func (s *AtomicSwap) Rollback() {
 	}
 	s.state = stateAborted
 }
+
+func (s *AtomicSwap) StateText() string {
+	switch s.state {
+	case stateInitialized:
+		return "stateInitialized"
+	case stateMadeNonBindingOffer:
+		return "stateMadeNonBindingOffer"
+	case stateMadeBindingOffer:
+		return "stateMadeBindingOffer"
+	case stateOfferAccepted:
+		return "stateOfferAccepted"
+	case stateFunded:
+		return "stateFunded"
+	case stateProvidedAdaptorDetails:
+		return "stateProvidedAdaptorDetails"
+	case stateCompleted:
+		return "stateCompleted"
+	default:
+		return "stateAborted"
+	}
+}

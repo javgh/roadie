@@ -4,9 +4,12 @@ import (
 	"io/ioutil"
 	"log"
 	"math/big"
+	"os"
+	"os/signal"
 	"os/user"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -85,6 +88,16 @@ func server(ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGUSR1)
+	go func() {
+		for {
+			<-c
+			log.Println("Report requested")
+			bobServer.Report()
+		}
+	}()
 
 	err = bobServer.Serve()
 	if err != nil {

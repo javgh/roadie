@@ -29,6 +29,7 @@ const (
 	jsonRPCEndpoint      = ".ethereum/geth.ipc"
 	jsonRPCKeystoreFile  = ".config/roadie/keystore"
 	boostInterval        = 90 * time.Second
+	serverCheckInterval  = time.Hour
 )
 
 var (
@@ -96,6 +97,16 @@ func server(ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
 			<-c
 			log.Println("Report requested")
 			bobServer.Report()
+		}
+	}()
+
+	go func() {
+		for {
+			time.Sleep(serverCheckInterval)
+			err2 := bobServer.Check(time.Now())
+			if err2 != nil {
+				log.Println("Error while running check: %s", err2)
+			}
 		}
 	}()
 

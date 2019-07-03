@@ -430,6 +430,43 @@ func (s *BobServer) Report() {
 		k := uuid.Must(uuid.FromString(uuidStr))
 		log.Printf("State of %s: %s\n", k, s.atomicSwaps[k].StateText())
 	}
+
+	for _, uuidStr := range keys {
+		k := uuid.Must(uuid.FromString(uuidStr))
+		encodedTx, hasTx := s.atomicSwaps[k].EncodedRefundTransaction()
+		if hasTx {
+			log.Printf("Refund tx for %s: %s\n", k, encodedTx)
+		}
+	}
+}
+
+func (s *BobServer) Check(now time.Time) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	var keys []string
+	for k := range s.atomicSwaps {
+		keys = append(keys, k.String())
+	}
+
+	sort.Strings(keys)
+	for _, uuidStr := range keys {
+		k := uuid.Must(uuid.FromString(uuidStr))
+		noLongerNeeded, refundTxID, err := s.atomicSwaps[k].Check(now)
+		if err != nil {
+			return err
+		}
+
+		if refundTxID != nil {
+			log.Printf("Broadcasted refund transaction %s for %s.\n", refundTxID, k)
+		}
+
+		if noLongerNeeded {
+			delete(s.atomicSwaps, k)
+		}
+	}
+
+	return nil
 }
 
 type Client struct {

@@ -3,7 +3,6 @@ package bob
 import (
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"math/big"
 	"time"
 
@@ -25,7 +24,7 @@ type (
 	AtomicSwap struct {
 		ID             uuid.UUID
 		state          state
-		deadline       *time.Time
+		deadline       time.Time
 		siacoin        types.Currency
 		ether          big.Int
 		antiSpamFee    big.Int
@@ -72,6 +71,7 @@ const (
 	stateFunded
 	stateProvidedAdaptorDetails
 	stateCompleted
+	stateRefunded
 	stateAborted
 
 	timelockOffset        = types.BlockHeight(1)
@@ -115,7 +115,7 @@ func NewAtomicSwap(trader trader.Trader, ethChain ethereum.Blockchain, siaChain 
 	atomicSwap := AtomicSwap{
 		ID:        id,
 		state:     stateInitialized,
-		deadline:  &deadline,
+		deadline:  deadline,
 		trader:    trader,
 		ethChain:  ethChain,
 		siaChain:  siaChain,
@@ -172,7 +172,7 @@ func (s *AtomicSwap) RequestBindingOffer(antiSpamID big.Int, now time.Time) (*tr
 
 	s.ether = offer.Ether
 	s.antiSpamID = antiSpamID
-	s.deadline = deadline
+	s.deadline = *deadline
 	s.state = stateMadeBindingOffer
 	return offer, nil
 }
@@ -182,11 +182,10 @@ func (s *AtomicSwap) AcceptOffer(alicePubKey ed25519.PublicKey, now time.Time) (
 		return nil, ErrWrongState
 	}
 
-	if time.Now().After(*s.deadline) {
+	if now.After(s.deadline) {
 		return nil, ErrOfferExpired
 	}
-	newDeadline := now.Add(atomicSwapLifetime)
-	s.deadline = &newDeadline
+	s.deadline = now.Add(atomicSwapLifetime)
 
 	bobKeypair, err := keypair.Generate()
 	if err != nil {
@@ -358,12 +357,27 @@ func (s *AtomicSwap) AnnounceDeposit() error {
 	return nil
 }
 
-func (s *AtomicSwap) Rollback() {
-	if s.state == stateFunded || s.state == stateProvidedAdaptorDetails ||
-		s.state == stateCompleted {
-		fmt.Printf("Refund: %s\n", sia.EncodeTransaction(s.refundTx))
+func (s *AtomicSwap) Check(now time.Time) (noLongerNeeded bool, maybeRefundTxID *types.TransactionID, err error) {
+	if now.After(s.deadline) {
+		if s.state == stateInitialized || s.state == stateMadeNonBindingOffer ||
+			s.state == stateMadeBindingOffer || s.state == stateOfferAccepted {
+			s.state = stateAborted
+		} else if s.state == stateFunded || s.state == stateProvidedAdaptorDetails {
+			err = s.siaChain.BroadcastTransaction(s.refundTx)
+			if err != nil {
+				return false, nil, err
+			}
+			s.state = stateRefunded
+			refundTxID := s.refundTx.ID()
+			maybeRefundTxID = &refundTxID
+		}
 	}
-	s.state = stateAborted
+
+	if now.After(s.deadline.Add(atomicSwapLifetime)) { // wait extra lifetime before it is safe to forget about it
+		noLongerNeeded = true
+	}
+
+	return noLongerNeeded, maybeRefundTxID, nil
 }
 
 func (s *AtomicSwap) StateText() string {
@@ -382,7 +396,18 @@ func (s *AtomicSwap) StateText() string {
 		return "stateProvidedAdaptorDetails"
 	case stateCompleted:
 		return "stateCompleted"
+	case stateRefunded:
+		return "stateRefunded"
 	default:
 		return "stateAborted"
 	}
+}
+
+func (s *AtomicSwap) EncodedRefundTransaction() (string, bool) {
+	if s.state == stateFunded || s.state == stateProvidedAdaptorDetails ||
+		s.state == stateCompleted || s.state == stateRefunded {
+		return sia.EncodeTransaction(s.refundTx), true
+	}
+
+	return "", false
 }

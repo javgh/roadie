@@ -12,9 +12,9 @@ import (
 
 	"github.com/javgh/roadie/blockchain/ethereum"
 	"github.com/javgh/roadie/blockchain/sia"
+	"github.com/javgh/roadie/frontend"
 	"github.com/javgh/roadie/keypair"
 	"github.com/javgh/roadie/rpc"
-	"github.com/javgh/roadie/trader"
 )
 
 const (
@@ -36,79 +36,11 @@ var (
 )
 
 type (
-	ConsoleFrontend struct {
-		exchangeRate trader.ExchangeRate
-	}
-
-	AutoAcceptFrontend struct{}
-
-	Frontend interface {
-		ApproveOffer(siacoin types.Currency, offer trader.Offer, binding bool) (bool, error)
-	}
-
 	confirmationDisplay struct {
 		current int64
 		total   int64
 	}
 )
-
-func NewConsoleFrontend() *ConsoleFrontend {
-	frontend := ConsoleFrontend{exchangeRate: trader.NewExchangeRate()}
-	return &frontend
-}
-
-func (f *ConsoleFrontend) ApproveOffer(siacoin types.Currency, offer trader.Offer, binding bool) (bool, error) {
-	if !offer.Available {
-		return false, nil
-	}
-
-	usdEther, err := f.exchangeRate.Fetch("ethereum")
-	if err != nil {
-		return false, err
-	}
-
-	usdSiacoin, err := f.exchangeRate.Fetch("siacoin")
-	if err != nil {
-		return false, err
-	}
-
-	antiSpamFeeUSD := ethereum.ApplyRate(&offer.AntiSpamFee, usdEther)
-	etherUSD := ethereum.ApplyRate(&offer.Ether, usdEther)
-	siacoinUSD := sia.ApplyRate(siacoin, usdSiacoin)
-
-	fmt.Printf("Best offer received:\n")
-	if !binding {
-		fmt.Printf("Burn: %s (~ %s)\n", ethereum.FormatEther(&offer.AntiSpamFee), trader.FormatUSD(antiSpamFeeUSD))
-	}
-	fmt.Printf("Give: %s (~ %s)\n", ethereum.FormatEther(&offer.Ether), trader.FormatUSD(etherUSD))
-	fmt.Printf("Get : %s (~ %s)\n", siacoin.HumanString(), trader.FormatUSD(siacoinUSD))
-	fmt.Printf("\nThe offer contains the following message:\n")
-	fmt.Printf("-----BEGIN MESSAGE-----\n")
-	fmt.Println(offer.Msg)
-	fmt.Printf("-----END MESSAGE-----\n\n")
-	fmt.Printf("USD amounts are based on data from CoinMarketCap.\n\n")
-
-	if !binding {
-		fmt.Printf("Note that this offer is non-binding. To continue, you will need to burn\n")
-		fmt.Printf("the listed anti-spam fee to receive a binding offer. Should the binding offer\n")
-		fmt.Printf("be different, you will be prompted again, but the anti-spam fee is non-refundable.\n\n")
-	} else {
-		fmt.Printf("The other party has indicated that this offer is binding and that they\n")
-		fmt.Printf("are ready to proceed with the swap.\n\n")
-	}
-
-	fmt.Printf("Press ENTER to continue and accept the offer or CTRL+C to cancel. >")
-
-	var in string
-	fmt.Scanln(&in)
-	fmt.Println()
-
-	return true, nil
-}
-
-func (f AutoAcceptFrontend) ApproveOffer(siacoin types.Currency, offer trader.Offer, binding bool) (bool, error) {
-	return true, nil
-}
 
 func (d *confirmationDisplay) show(current int64) {
 	if d.current == current {
@@ -122,7 +54,7 @@ func (d *confirmationDisplay) show(current int64) {
 	}
 }
 
-func PerformSwap(siacoin types.Currency, frontend Frontend,
+func PerformSwap(siacoin types.Currency, frontend frontend.Frontend,
 	ethChain ethereum.Blockchain, siaChain sia.Blockchain, roadieClient *rpc.Client) error {
 
 	id, nonBindingOffer, err := roadieClient.RequestNonBindingOffer(siacoin)

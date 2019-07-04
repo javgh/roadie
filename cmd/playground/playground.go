@@ -19,6 +19,7 @@ import (
 	"github.com/javgh/roadie/blockchain/ethereum"
 	"github.com/javgh/roadie/blockchain/sia"
 	"github.com/javgh/roadie/bob"
+	"github.com/javgh/roadie/frontend"
 	"github.com/javgh/roadie/rpc"
 	"github.com/javgh/roadie/trader"
 )
@@ -117,8 +118,8 @@ func server(ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
 }
 
 func client(ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
-	frontend := alice.NewConsoleFrontend()
-	//frontend := alice.AutoAcceptFrontend{}
+	frontend := frontend.NewConsoleFrontend()
+	//frontend := frontend.AutoAcceptFrontend{}
 
 	roadieClient, err := rpc.Dial("localhost:9000")
 	if err != nil {

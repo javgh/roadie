@@ -139,7 +139,7 @@ func PerformSwap(siacoin types.Currency, frontend Frontend,
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Burning anti-spam fee (id %s) and waiting for Ethereum confirmations.\n", antiSpamID.Text(10))
+	fmt.Printf("Burning anti-spam fee (id %s) and waiting for Ethereum confirmations.\n", antiSpamID)
 	ethChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer.AntiSpamFee)
 	confDisplay := confirmationDisplay{current: -1, total: antiSpamConfirmations}
 	for {
@@ -317,4 +317,9 @@ func PerformSwap(siacoin types.Currency, frontend Frontend,
 
 	fmt.Printf("Swap completed successfully with Sia claim transaction %s .\n", claimTx.ID())
 	return nil
+}
+
+func ReclaimDeposit(ethChain ethereum.Blockchain, antiSpamID big.Int) error {
+	fmt.Printf("Reclaiming deposit with id %s.\n", &antiSpamID)
+	return ethChain.ReclaimDeposit(antiSpamID)
 }

@@ -60,6 +60,7 @@ type (
 		CheckDepositConfirmations(recipient common.Address, adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) (int64, error)
 		ClaimDeposit(adaptorPrivKey ed25519.Adaptor, antiSpamID big.Int) error
 		LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) (bool, *ed25519.Adaptor, error)
+		ReclaimDeposit(antiSpamID big.Int) error
 		WalletAddress() common.Address
 		SuggestGasPrice() (*big.Int, error)
 	}
@@ -230,6 +231,12 @@ func (c *GethBlockchain) LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) 
 
 	adaptorPrivKey := ed25519.Adaptor(switchEndianness(adaptorPrivKeyBigInt.Bytes()))
 	return true, &adaptorPrivKey, nil
+}
+
+func (c *GethBlockchain) ReclaimDeposit(antiSpamID big.Int) error {
+	hashedID := hash(antiSpamID)
+	c.retryingHub.ReclaimDeposit(hashedID, big.NewInt(0), mediumGasLimit)
+	return nil
 }
 
 func (c *GethBlockchain) WalletAddress() common.Address {

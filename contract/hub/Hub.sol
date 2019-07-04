@@ -66,6 +66,7 @@ contract Hub is Ed25519 {
 
     function claimDeposit(uint adaptorPrivKey, uint antiSpamID) external {
         bytes32 hashedAntiSpamID = hash(antiSpamID);
+        require(deposits[hashedAntiSpamID].deadline >= now);
         require(deposits[hashedAntiSpamID].recipient == msg.sender);
         require(adaptorPrivKey != 0);
 

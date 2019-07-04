@@ -100,6 +100,12 @@ func (h *RetryingHub) AdaptorPrivKeys(adaptorPubKey *big.Int) *big.Int {
 	return adaptorPrivKey.(*big.Int)
 }
 
+func (h *RetryingHub) ReclaimDeposit(hashedID [32]byte, value *big.Int, gasLimit uint64) {
+	h.robustWrite(func(auth *bind.TransactOpts) (*types.Transaction, error) {
+		return h.hub.ReclaimDeposit(auth, hashedID)
+	}, value, gasLimit)
+}
+
 func newBackoff() backoff.Backoff {
 	b := backoff.Backoff{
 		Min:    backoffMin,

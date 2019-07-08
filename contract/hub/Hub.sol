@@ -21,9 +21,18 @@ contract Hub is Ed25519 {
         uint deadline;
     }
 
+    struct Server {
+        string target;
+        string cert;
+        uint blockNumber;
+    }
+
     mapping(bytes32 => AntiSpamFee) public antiSpamFees;
     mapping(bytes32 => Deposit) public deposits;
     mapping(uint => uint) public adaptorPrivKeys;
+
+    mapping(uint => Server) public servers;
+    uint public nextServerID = 0;
 
     function burnAntiSpamFee(bytes32 hashedID) external payable {
         antiSpamFees[hashedID].fee += msg.value;
@@ -88,6 +97,28 @@ contract Hub is Ed25519 {
         delete deposits[hashedAntiSpamID];
         delete antiSpamFees[hashedAntiSpamID];
         msg.sender.transfer(value);
+    }
+
+    function registerServer(string calldata target, string calldata cert) external {
+        servers[nextServerID].target = target;
+        servers[nextServerID].cert = cert;
+        servers[nextServerID].blockNumber = block.number;
+        nextServerID += 1;
+    }
+
+    function fetchServer(uint laterThan,
+                         uint offset) external view
+                         returns (bool, string memory, string memory) {
+        if (offset >= nextServerID) {
+            return (false, "", "");
+        }
+
+        uint id = nextServerID - offset - 1;
+        if (servers[id].blockNumber <= laterThan) {
+            return (false, "", "");
+        }
+
+        return (true, servers[id].target, servers[id].cert);
     }
 
     function hash(uint id) public pure returns (bytes32) {

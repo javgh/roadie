@@ -53,6 +53,11 @@ type (
 		retryingHub   retryinghub.RetryingHub
 	}
 
+	ServerDetails struct {
+		Target string
+		Cert   string
+	}
+
 	Blockchain interface {
 		BurnAntiSpamFee(antiSpamID big.Int, antiSpamFee big.Int) error
 		CheckAntiSpamConfirmations(antiSpamID big.Int, antiSpamFee big.Int) (int64, error)
@@ -61,6 +66,8 @@ type (
 		ClaimDeposit(adaptorPrivKey ed25519.Adaptor, antiSpamID big.Int) error
 		LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) (bool, *ed25519.Adaptor, error)
 		ReclaimDeposit(antiSpamID big.Int) error
+		RegisterServer(target string, cert string) error
+		FetchServers(laterThan big.Int) ([]ServerDetails, error)
 		WalletAddress() common.Address
 		SuggestGasPrice() (*big.Int, error)
 	}
@@ -237,6 +244,29 @@ func (c *GethBlockchain) ReclaimDeposit(antiSpamID big.Int) error {
 	hashedID := hash(antiSpamID)
 	c.retryingHub.ReclaimDeposit(hashedID, big.NewInt(0), mediumGasLimit)
 	return nil
+}
+
+func (c *GethBlockchain) RegisterServer(target string, cert string) error {
+	c.retryingHub.RegisterServer(target, cert, big.NewInt(0), mediumGasLimit)
+	return nil
+}
+
+func (c *GethBlockchain) FetchServers(laterThan big.Int) ([]ServerDetails, error) {
+	offset := big.NewInt(0)
+	var serverDetails []ServerDetails
+
+	for {
+		moreDetails := c.retryingHub.FetchServer(&laterThan, offset)
+		if !moreDetails.OK {
+			break
+		}
+
+		serverDetails = append(serverDetails,
+			ServerDetails{Target: moreDetails.Target, Cert: moreDetails.Cert})
+		offset.Add(offset, big.NewInt(1))
+	}
+
+	return serverDetails, nil
 }
 
 func (c *GethBlockchain) WalletAddress() common.Address {

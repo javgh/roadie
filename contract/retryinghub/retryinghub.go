@@ -40,6 +40,12 @@ type (
 		hub           *contract.Hub
 	}
 
+	ServerDetails struct {
+		OK     bool
+		Target string
+		Cert   string
+	}
+
 	blockchainReader func() (interface{}, error)
 	blockchainWriter func(auth *bind.TransactOpts) (*types.Transaction, error)
 )
@@ -104,6 +110,20 @@ func (h *RetryingHub) ReclaimDeposit(hashedID [32]byte, value *big.Int, gasLimit
 	h.robustWrite(func(auth *bind.TransactOpts) (*types.Transaction, error) {
 		return h.hub.ReclaimDeposit(auth, hashedID)
 	}, value, gasLimit)
+}
+
+func (h *RetryingHub) RegisterServer(target string, cert string, value *big.Int, gasLimit uint64) {
+	h.robustWrite(func(auth *bind.TransactOpts) (*types.Transaction, error) {
+		return h.hub.RegisterServer(auth, target, cert)
+	}, value, gasLimit)
+}
+
+func (h *RetryingHub) FetchServer(laterThan *big.Int, offset *big.Int) ServerDetails {
+	serverDetails := robustRead(func() (interface{}, error) {
+		ok, target, cert, err := h.hub.FetchServer(nil, laterThan, offset)
+		return ServerDetails{OK: ok, Target: target, Cert: cert}, err
+	})
+	return serverDetails.(ServerDetails)
 }
 
 func newBackoff() backoff.Backoff {

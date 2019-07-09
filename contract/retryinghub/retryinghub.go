@@ -16,13 +16,12 @@ import (
 )
 
 const (
-	backoffMin      = 10 * time.Second
-	backoffMax      = 90 * time.Second
-	backoffFactor   = 2
-	backoffJitter   = false
-	txCheckInterval = 10 * time.Second
-	boostFactorNum  = 120 // boost in steps of 20 %
-	boostFactorDen  = 100
+	backoffMin     = 10 * time.Second
+	backoffMax     = 90 * time.Second
+	backoffFactor  = 2
+	backoffJitter  = false
+	boostFactorNum = 120 // boost in steps of 20 %
+	boostFactorDen = 100
 )
 
 type (
@@ -32,34 +31,36 @@ type (
 	}
 
 	RetryingHub struct {
-		maxGasPrice   big.Int
-		boostInterval time.Duration
-		backend       Backend
-		privKey       ecdsa.PrivateKey
-		walletAddress common.Address
-		hub           *contract.Hub
+		maxGasPrice     big.Int
+		boostInterval   time.Duration
+		txCheckInterval time.Duration
+		backend         Backend
+		privKey         ecdsa.PrivateKey
+		walletAddress   common.Address
+		hub             *contract.Hub
 	}
 
 	ServerDetails struct {
 		OK     bool
 		Target string
-		Cert   string
+		Cert   []byte
 	}
 
 	blockchainReader func() (interface{}, error)
 	blockchainWriter func(auth *bind.TransactOpts) (*types.Transaction, error)
 )
 
-func New(maxGasPrice big.Int, boostInterval time.Duration,
+func New(maxGasPrice big.Int, boostInterval time.Duration, txCheckInterval time.Duration,
 	backend Backend, privKey ecdsa.PrivateKey, walletAddress common.Address,
 	hub *contract.Hub) RetryingHub {
 	h := RetryingHub{
-		maxGasPrice:   maxGasPrice,
-		boostInterval: boostInterval,
-		backend:       backend,
-		privKey:       privKey,
-		walletAddress: walletAddress,
-		hub:           hub,
+		maxGasPrice:     maxGasPrice,
+		boostInterval:   boostInterval,
+		txCheckInterval: txCheckInterval,
+		backend:         backend,
+		privKey:         privKey,
+		walletAddress:   walletAddress,
+		hub:             hub,
 	}
 	return h
 }
@@ -112,15 +113,15 @@ func (h *RetryingHub) ReclaimDeposit(hashedID [32]byte, value *big.Int, gasLimit
 	}, value, gasLimit)
 }
 
-func (h *RetryingHub) RegisterServer(target string, cert string, value *big.Int, gasLimit uint64) {
+func (h *RetryingHub) RegisterServer(target string, cert []byte, value *big.Int, gasLimit uint64) {
 	h.robustWrite(func(auth *bind.TransactOpts) (*types.Transaction, error) {
 		return h.hub.RegisterServer(auth, target, cert)
 	}, value, gasLimit)
 }
 
-func (h *RetryingHub) FetchServer(laterThan *big.Int, offset *big.Int) ServerDetails {
+func (h *RetryingHub) FetchServer(maxAge *big.Int, offset *big.Int) ServerDetails {
 	serverDetails := robustRead(func() (interface{}, error) {
-		ok, target, cert, err := h.hub.FetchServer(nil, laterThan, offset)
+		ok, target, cert, err := h.hub.FetchServer(nil, maxAge, offset)
 		return ServerDetails{OK: ok, Target: target, Cert: cert}, err
 	})
 	return serverDetails.(ServerDetails)
@@ -184,7 +185,7 @@ func (h *RetryingHub) robustWrite(writer blockchainWriter, value *big.Int, gasLi
 
 		boostDeadline := time.Now().Add(h.boostInterval)
 		for {
-			time.Sleep(txCheckInterval)
+			time.Sleep(h.txCheckInterval)
 
 			nonceNow := robustRead(func() (interface{}, error) {
 				return h.backend.NonceAt(context.Background(), h.walletAddress, nil)

@@ -24,16 +24,19 @@ import (
 )
 
 const (
-	formatEtherPrecision   = 6
-	formatGweiPrecision    = 1
-	smallGasLimit          = 100000
-	mediumGasLimit         = 200000
-	largeGasLimit          = 1500000
-	ganacheEndpoint        = "http://127.0.0.1:8545"
-	ganachePrivKey         = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
-	ganacheBoostInterval   = 5 * time.Second
-	simulatedPrivKey       = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
-	simulatedBlockInterval = 500 * time.Millisecond
+	formatEtherPrecision     = 6
+	formatGweiPrecision      = 1
+	smallGasLimit            = 100000
+	mediumGasLimit           = 200000
+	largeGasLimit            = 1500000
+	txCheckInterval          = 10 * time.Second
+	ganacheEndpoint          = "http://127.0.0.1:8545"
+	ganachePrivKey           = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
+	ganacheBoostInterval     = 5 * time.Second
+	ganacheTxCheckInterval   = time.Second
+	simulatedPrivKey         = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
+	simulatedBlockInterval   = 500 * time.Millisecond
+	simulatedTxCheckInterval = time.Second
 )
 
 var (
@@ -55,7 +58,7 @@ type (
 
 	ServerDetails struct {
 		Target string
-		Cert   string
+		Cert   []byte
 	}
 
 	Blockchain interface {
@@ -66,8 +69,8 @@ type (
 		ClaimDeposit(adaptorPrivKey ed25519.Adaptor, antiSpamID big.Int) error
 		LookupAdaptorPrivKey(adaptorPubKey ed25519.CurvePoint) (bool, *ed25519.Adaptor, error)
 		ReclaimDeposit(antiSpamID big.Int) error
-		RegisterServer(target string, cert string) error
-		FetchServers(laterThan big.Int) ([]ServerDetails, error)
+		RegisterServer(target string, cert []byte) error
+		FetchServers(maxAge big.Int) ([]ServerDetails, error)
 		WalletAddress() common.Address
 		SuggestGasPrice() (*big.Int, error)
 	}
@@ -92,7 +95,7 @@ func NewGanacheBlockchain() (*GethBlockchain, error) {
 	}
 
 	retryingHub := retryinghub.New(
-		*ganacheMaxGasPrice, ganacheBoostInterval, client, *privKeyECDSA, walletAddress, hub)
+		*ganacheMaxGasPrice, ganacheBoostInterval, ganacheTxCheckInterval, client, *privKeyECDSA, walletAddress, hub)
 
 	c := GethBlockchain{
 		backend:       client,
@@ -125,7 +128,7 @@ func NewSimulatedBlockchain() (*GethBlockchain, error) {
 	}
 
 	retryingHub := retryinghub.New(
-		*ganacheMaxGasPrice, ganacheBoostInterval, backend, *privKeyECDSA, walletAddress, hub)
+		*ganacheMaxGasPrice, ganacheBoostInterval, ganacheTxCheckInterval, backend, *privKeyECDSA, walletAddress, hub)
 
 	c := GethBlockchain{
 		backend:       backend,
@@ -176,7 +179,7 @@ func NewLocalNodeBlockchain(endpoint string, keystoreFile string, contractAddres
 	}
 
 	retryingHub := retryinghub.New(
-		maxGasPrice, boostInterval, client, *key.PrivateKey, walletAddress, hub)
+		maxGasPrice, boostInterval, txCheckInterval, client, *key.PrivateKey, walletAddress, hub)
 
 	c := GethBlockchain{
 		backend:       client,
@@ -246,17 +249,17 @@ func (c *GethBlockchain) ReclaimDeposit(antiSpamID big.Int) error {
 	return nil
 }
 
-func (c *GethBlockchain) RegisterServer(target string, cert string) error {
-	c.retryingHub.RegisterServer(target, cert, big.NewInt(0), mediumGasLimit)
+func (c *GethBlockchain) RegisterServer(target string, cert []byte) error {
+	c.retryingHub.RegisterServer(target, cert, big.NewInt(0), largeGasLimit)
 	return nil
 }
 
-func (c *GethBlockchain) FetchServers(laterThan big.Int) ([]ServerDetails, error) {
+func (c *GethBlockchain) FetchServers(maxAge big.Int) ([]ServerDetails, error) {
 	offset := big.NewInt(0)
 	var serverDetails []ServerDetails
 
 	for {
-		moreDetails := c.retryingHub.FetchServer(&laterThan, offset)
+		moreDetails := c.retryingHub.FetchServer(&maxAge, offset)
 		if !moreDetails.OK {
 			break
 		}

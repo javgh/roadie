@@ -25,21 +25,24 @@ import (
 )
 
 const (
-	defaultClientAddress = "localhost:9980"
-	defaultPasswordFile  = ".sia/apipassword"
-	jsonRPCEndpoint      = ".ethereum/geth.ipc"
-	jsonRPCKeystoreFile  = ".config/roadie/keystore"
-	boostInterval        = 90 * time.Second
-	serverCheckInterval  = time.Hour
+	defaultClientAddress  = "localhost:9980"
+	defaultPasswordFile   = ".sia/apipassword"
+	jsonRPCEndpoint       = ".ethereum/geth.ipc"
+	jsonRPCKeystoreFile   = ".config/roadie/keystore"
+	boostInterval         = 90 * time.Second
+	serverCheckInterval   = time.Hour
+	registryCheckInterval = 12 * time.Hour
 )
 
 var (
-	oneSiacoin         = types.SiacoinPrecision
-	gwei               = big.NewInt(1e9)
-	finney             = big.NewInt(1e15)
-	defaultAntiSpamFee = big.NewInt(1e14)
-	contractAddress    = common.HexToAddress("0x799DF2482f589663d7754451de3FfeF4CAA439c8")
-	maxGasPrice        = new(big.Int).Mul(big.NewInt(21), gwei)
+	oneSiacoin                    = types.SiacoinPrecision
+	gwei                          = big.NewInt(1e9)
+	finney                        = big.NewInt(1e15)
+	defaultAntiSpamFee            = big.NewInt(1e14)
+	contractAddress               = common.HexToAddress("0x799DF2482f589663d7754451de3FfeF4CAA439c8")
+	maxGasPrice                   = new(big.Int).Mul(big.NewInt(21), gwei)
+	registryEntryMaxAge           = big.NewInt(14 * 24 * 60 * 60) // 14 days in seconds
+	registryEntryMaxAgeWithMargin = big.NewInt(15 * 24 * 60 * 60) // 15 days in seconds
 )
 
 func prependHomeDirectory(path string) string {
@@ -53,6 +56,7 @@ func prependHomeDirectory(path string) string {
 func main() {
 	//ethChain, err := ethereum.NewGanacheBlockchain()
 	ethChain, err := ethereum.NewSimulatedBlockchain()
+	time.Sleep(time.Second) // wait for smart contract to deploy
 	//endpoint := prependHomeDirectory(jsonRPCEndpoint)
 	//keystoreFile := prependHomeDirectory(jsonRPCKeystoreFile)
 	//ethChain, err := ethereum.NewLocalNodeBlockchain(
@@ -75,7 +79,7 @@ func main() {
 	drSiaChain := sia.NewDryRunBlockchain(*siaChain)
 
 	go server(ethChain, &drSiaChain)
-	time.Sleep(2 * time.Second)
+	time.Sleep(time.Second)
 	client(ethChain, &drSiaChain)
 }
 
@@ -86,7 +90,8 @@ func server(ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
 	newAtomicSwap := func(now time.Time) *bob.AtomicSwap {
 		return bob.NewAtomicSwap(&trader, ethChain, siaChain, blacklist, now)
 	}
-	bobServer, err := rpc.NewBobServer("tcp", "localhost:9000", "", "", newAtomicSwap)
+	bobServer, err := rpc.NewBobServer(
+		"tcp", "localhost:9000", "./testdata/server.crt", "./testdata/server.key", "localhost:9000", newAtomicSwap)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -101,12 +106,26 @@ func server(ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
 		}
 	}()
 
+	err = bobServer.Register(*registryEntryMaxAge, ethChain)
+	if err != nil {
+		log.Fatal(err)
+	}
+	go func() {
+		for {
+			time.Sleep(registryCheckInterval)
+			err2 := bobServer.Register(*registryEntryMaxAge, ethChain)
+			if err2 != nil {
+				log.Printf("Error while attempting to re-register: %s\n", err2)
+			}
+		}
+	}()
+
 	go func() {
 		for {
 			time.Sleep(serverCheckInterval)
-			err2 := bobServer.Check(time.Now())
-			if err2 != nil {
-				log.Println("Error while running check: %s", err2)
+			err3 := bobServer.Check(time.Now())
+			if err3 != nil {
+				log.Printf("Error while running check: %s\n", err3)
 			}
 		}
 	}()
@@ -121,7 +140,12 @@ func client(ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
 	frontend := frontend.NewConsoleFrontend()
 	//frontend := frontend.AutoAcceptFrontend{}
 
-	roadieClient, err := rpc.Dial("localhost:9000")
+	serverDetails, err := ethChain.FetchServers(*registryEntryMaxAgeWithMargin)
+	if len(serverDetails) == 0 {
+		log.Fatal("no server available")
+	}
+
+	roadieClient, err := rpc.Dial(serverDetails[0].Target, serverDetails[0].Cert)
 	if err != nil {
 		log.Fatal(err)
 	}

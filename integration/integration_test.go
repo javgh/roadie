@@ -49,7 +49,7 @@ func server(t *testing.T, ethChain ethereum.Blockchain, siaChain sia.Blockchain)
 	newAtomicSwap := func(now time.Time) *bob.AtomicSwap {
 		return bob.NewAtomicSwap(&trader, ethChain, siaChain, blacklist, now)
 	}
-	bobServer, err := rpc.NewBobServer(serverNetwork, serverAddress, "", "", newAtomicSwap)
+	bobServer, err := rpc.NewBobServer(serverNetwork, serverAddress, "", "", serverAddress, newAtomicSwap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func server(t *testing.T, ethChain ethereum.Blockchain, siaChain sia.Blockchain)
 func client(t *testing.T, ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
 	frontend := frontend.AutoAcceptFrontend{}
 
-	roadieClient, err := rpc.Dial(serverAddress)
+	roadieClient, err := rpc.Dial(serverAddress, []byte{})
 	if err != nil {
 		t.Fatal(err)
 	}

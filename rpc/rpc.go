@@ -1,9 +1,12 @@
 package rpc
 
 import (
+	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"log"
 	"math/big"
 	"net"
@@ -18,6 +21,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/encoding"
 
+	"github.com/javgh/roadie/blockchain/ethereum"
 	"github.com/javgh/roadie/bob"
 	"github.com/javgh/roadie/trader"
 )
@@ -27,8 +31,9 @@ type (
 )
 
 var (
-	ErrNotImplemented = errors.New("interceptor support is not implemented")
-	ErrUnknownID      = errors.New("unknown id")
+	ErrNotImplemented     = errors.New("interceptor support is not implemented")
+	ErrUnknownID          = errors.New("unknown id")
+	ErrInvalidCertificate = errors.New("unable to parse certificate")
 
 	serviceDesc = grpc.ServiceDesc{
 		ServiceName: "Roadie",
@@ -95,6 +100,8 @@ type (
 		listener      net.Listener
 		grpcServer    *grpc.Server
 		newAtomicSwap func(now time.Time) *bob.AtomicSwap
+		target        string
+		cert          []byte
 	}
 )
 
@@ -384,7 +391,7 @@ func announceDepositHandler(srv interface{}, ctx context.Context, dec func(inter
 	return srv.(Server).AnnounceDeposit(in)
 }
 
-func NewBobServer(network string, address string, certFile string, keyFile string,
+func NewBobServer(network string, address string, certFile string, keyFile string, target string,
 	newAtomicSwap func(now time.Time) *bob.AtomicSwap) (*BobServer, error) {
 	opts := []grpc.ServerOption{}
 	if certFile != "" && keyFile != "" {
@@ -396,6 +403,15 @@ func NewBobServer(network string, address string, certFile string, keyFile strin
 		opts = append(opts, grpc.Creds(creds))
 	}
 
+	cert := []byte{}
+	if certFile != "" {
+		var err error
+		cert, err = ioutil.ReadFile(certFile)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	listener, err := net.Listen(network, address)
 	if err != nil {
 		return nil, err
@@ -405,11 +421,37 @@ func NewBobServer(network string, address string, certFile string, keyFile strin
 		atomicSwaps:   make(map[uuid.UUID]*bob.AtomicSwap),
 		listener:      listener,
 		newAtomicSwap: newAtomicSwap,
+		target:        target,
+		cert:          cert,
 	}
 	bobServer.grpcServer = grpc.NewServer(opts...)
 	bobServer.grpcServer.RegisterService(&serviceDesc, &bobServer)
 
 	return &bobServer, nil
+}
+
+func (s *BobServer) Register(maxAge big.Int, ethChain ethereum.Blockchain) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	serverDetails, err := ethChain.FetchServers(maxAge)
+	if err != nil {
+		return err
+	}
+
+	alreadyRegistered := false
+	for _, d := range serverDetails {
+		if d.Target == s.target && bytes.Equal(d.Cert, s.cert) {
+			alreadyRegistered = true
+			break
+		}
+	}
+
+	if !alreadyRegistered {
+		return ethChain.RegisterServer(s.target, s.cert)
+	}
+
+	return nil
 }
 
 func (s *BobServer) Serve() error {
@@ -559,11 +601,23 @@ func (c *Client) AnnounceDeposit(id uuid.UUID) error {
 	return nil
 }
 
-func Dial(target string) (*Client, error) {
-	conn, err := grpc.Dial(target,
-		grpc.WithInsecure(),
-		grpc.WithDefaultCallOptions(grpc.CallContentSubtype(JSONCodec{}.Name())),
-	)
+func Dial(target string, cert []byte) (*Client, error) {
+	opts := []grpc.DialOption{}
+	if len(cert) > 0 {
+		cp := x509.NewCertPool()
+		ok := cp.AppendCertsFromPEM(cert)
+		if !ok {
+			return nil, ErrInvalidCertificate
+		}
+
+		creds := credentials.NewClientTLSFromCert(cp, "")
+		opts = append(opts, grpc.WithTransportCredentials(creds))
+	} else {
+		opts = append(opts, grpc.WithInsecure())
+	}
+
+	opts = append(opts, grpc.WithDefaultCallOptions(grpc.CallContentSubtype(JSONCodec{}.Name())))
+	conn, err := grpc.Dial(target, opts...)
 	if err != nil {
 		return nil, err
 	}

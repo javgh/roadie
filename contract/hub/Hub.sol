@@ -23,8 +23,8 @@ contract Hub is Ed25519 {
 
     struct Server {
         string target;
-        string cert;
-        uint blockNumber;
+        bytes cert;
+        uint timestamp;
     }
 
     mapping(bytes32 => AntiSpamFee) public antiSpamFees;
@@ -99,22 +99,22 @@ contract Hub is Ed25519 {
         msg.sender.transfer(value);
     }
 
-    function registerServer(string calldata target, string calldata cert) external {
+    function registerServer(string calldata target, bytes calldata cert) external {
         servers[nextServerID].target = target;
         servers[nextServerID].cert = cert;
-        servers[nextServerID].blockNumber = block.number;
+        servers[nextServerID].timestamp = now;
         nextServerID += 1;
     }
 
-    function fetchServer(uint laterThan,
+    function fetchServer(uint maxAge,
                          uint offset) external view
-                         returns (bool, string memory, string memory) {
+                         returns (bool, string memory, bytes memory) {
         if (offset >= nextServerID) {
             return (false, "", "");
         }
 
         uint id = nextServerID - offset - 1;
-        if (servers[id].blockNumber <= laterThan) {
+        if (servers[id].timestamp + maxAge < now) {
             return (false, "", "");
         }
 

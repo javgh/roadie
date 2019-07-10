@@ -127,6 +127,20 @@ func (h *RetryingHub) FetchServer(maxAge *big.Int, offset *big.Int) ServerDetail
 	return serverDetails.(ServerDetails)
 }
 
+func (h *RetryingHub) Version() string {
+	version := robustRead(func() (interface{}, error) {
+		return h.hub.Version(nil)
+	})
+	return version.(string)
+}
+
+func (h *RetryingHub) Deprecated() bool {
+	deprecated := robustRead(func() (interface{}, error) {
+		return h.hub.Deprecated(nil)
+	})
+	return deprecated.(bool)
+}
+
 func newBackoff() backoff.Backoff {
 	b := backoff.Backoff{
 		Min:    backoffMin,

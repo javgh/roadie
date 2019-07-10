@@ -34,6 +34,19 @@ contract Hub is Ed25519 {
     mapping(uint => Server) public servers;
     uint public nextServerID = 0;
 
+    string public version = "0.1.0";
+    bool public deprecated = false;
+    address public admin;
+
+    modifier onlyAdmin {
+        require(msg.sender == admin);
+        _;
+    }
+
+    constructor() public {
+        admin = msg.sender;
+    }
+
     function burnAntiSpamFee(bytes32 hashedID) external payable {
         antiSpamFees[hashedID].fee += msg.value;
         antiSpamFees[hashedID].blockNumber = block.number;
@@ -123,5 +136,13 @@ contract Hub is Ed25519 {
 
     function hash(uint id) public pure returns (bytes32) {
         return sha256(abi.encode(id));
+    }
+
+    function setVersion(string calldata _version) external onlyAdmin {
+        version = _version;
+    }
+
+    function setDeprecated(bool _deprecated) external onlyAdmin {
+        deprecated = _deprecated;
     }
 }

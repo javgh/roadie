@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/HyperspaceApp/ed25519"
+	"github.com/blang/semver"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -37,10 +38,13 @@ const (
 	simulatedPrivKey         = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
 	simulatedBlockInterval   = 500 * time.Millisecond
 	simulatedTxCheckInterval = time.Second
+	requiredMajorVersion     = 0
 )
 
 var (
-	ErrStillSyncing = errors.New("Ethereum node is still syncing")
+	ErrStillSyncing        = errors.New("Ethereum node is still syncing")
+	ErrIncompatibleVersion = errors.New("smart contract has an incompatible version - please upgrade")
+	ErrDeprecated          = errors.New("smart contract is marked as deprecated - please check for updates")
 
 	gwei               = big.NewInt(1e9)
 	oneEther           = big.NewInt(1e18)
@@ -62,6 +66,7 @@ type (
 	}
 
 	Blockchain interface {
+		CheckSmartContract() error
 		BurnAntiSpamFee(antiSpamID big.Int, antiSpamFee big.Int) error
 		CheckAntiSpamConfirmations(antiSpamID big.Int, antiSpamFee big.Int) (int64, error)
 		DepositEther(recipient common.Address, adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) error
@@ -126,6 +131,7 @@ func NewSimulatedBlockchain() (*GethBlockchain, error) {
 	if err != nil {
 		return nil, err
 	}
+	backend.Commit()
 
 	retryingHub := retryinghub.New(
 		*ganacheMaxGasPrice, ganacheBoostInterval, ganacheTxCheckInterval, backend, *privKeyECDSA, walletAddress, hub)
@@ -187,6 +193,24 @@ func NewLocalNodeBlockchain(endpoint string, keystoreFile string, contractAddres
 		retryingHub:   retryingHub,
 	}
 	return &c, nil
+}
+
+func (c *GethBlockchain) CheckSmartContract() error {
+	version := c.retryingHub.Version()
+	semVersion, err := semver.Make(version)
+	if err != nil {
+		return err
+	}
+	if semVersion.Major != requiredMajorVersion {
+		return ErrIncompatibleVersion
+	}
+
+	deprecated := c.retryingHub.Deprecated()
+	if deprecated {
+		return ErrDeprecated
+	}
+
+	return nil
 }
 
 func (c *GethBlockchain) BurnAntiSpamFee(antiSpamID big.Int, antiSpamFee big.Int) error {

@@ -37,8 +37,12 @@ func TestIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	err = ethChain.CheckSmartContract()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	go server(t, ethChain, siaChain)
-	time.Sleep(2 * time.Second)
 	client(t, ethChain, siaChain)
 }
 

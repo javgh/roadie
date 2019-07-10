@@ -3,7 +3,6 @@ package ethereum
 import (
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,8 +17,6 @@ func TestEthereum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	time.Sleep(time.Second) // wait for smart contract to deploy
 
 	t.Run("StartsOutEmpty", func(t *testing.T) {
 		serverDetails, err := ethChain.FetchServers(*maxAge)

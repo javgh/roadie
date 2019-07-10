@@ -56,7 +56,6 @@ func prependHomeDirectory(path string) string {
 func main() {
 	//ethChain, err := ethereum.NewGanacheBlockchain()
 	ethChain, err := ethereum.NewSimulatedBlockchain()
-	time.Sleep(time.Second) // wait for smart contract to deploy
 	//endpoint := prependHomeDirectory(jsonRPCEndpoint)
 	//keystoreFile := prependHomeDirectory(jsonRPCKeystoreFile)
 	//ethChain, err := ethereum.NewLocalNodeBlockchain(
@@ -77,6 +76,11 @@ func main() {
 		log.Fatal(err)
 	}
 	drSiaChain := sia.NewDryRunBlockchain(*siaChain)
+
+	err = ethChain.CheckSmartContract()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	go server(ethChain, &drSiaChain)
 	time.Sleep(time.Second)

@@ -2,11 +2,15 @@ package ethereum
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/HyperspaceApp/ed25519"
@@ -19,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/pborman/uuid"
 
 	contract "github.com/javgh/roadie/contract/hub"
 	"github.com/javgh/roadie/contract/retryinghub"
@@ -45,6 +50,7 @@ var (
 	ErrStillSyncing        = errors.New("Ethereum node is still syncing")
 	ErrIncompatibleVersion = errors.New("smart contract has an incompatible version - please upgrade")
 	ErrDeprecated          = errors.New("smart contract is marked as deprecated - please check for updates")
+	ErrUnexpectedDirectory = errors.New("keystore location appears to be a directory")
 
 	gwei               = big.NewInt(1e9)
 	oneEther           = big.NewInt(1e18)
@@ -330,4 +336,47 @@ func ApplyRate(ether *big.Int, rate *big.Rat) *big.Rat {
 	etherRat := new(big.Rat).SetFrac(ether, oneEther)
 	result := new(big.Rat).Mul(etherRat, rate)
 	return result
+}
+
+// EnsureKeystoreExists tries to determine whether we already have a keystore.
+// Otherwise it will create a fresh key. The key will be 'encrypted' with an
+// empty password. This provides no protection, but will make the keystore
+// compatible with other Ethereum wallets.
+func EnsureKeystoreExists(path string) error {
+	info, err := os.Stat(path)
+	if err != nil && os.IsExist(err) {
+		return err
+	}
+
+	if info != nil && info.IsDir() {
+		return ErrUnexpectedDirectory
+	}
+
+	if info != nil {
+		fmt.Printf("Using Ethereum keystore %s\n", path)
+		return nil
+	}
+
+	fmt.Printf("Creating new Ethereum keystore %s\n", path)
+	err = os.MkdirAll(filepath.Dir(path), 0700)
+	if err != nil {
+		return err
+	}
+
+	privateKeyECDSA, err := ecdsa.GenerateKey(crypto.S256(), rand.Reader)
+	if err != nil {
+		return err
+	}
+
+	key := &keystore.Key{
+		Id:         uuid.NewRandom(),
+		Address:    crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
+		PrivateKey: privateKeyECDSA,
+	}
+	json, err := keystore.EncryptKey(key, "", keystore.StandardScryptN, keystore.StandardScryptP)
+	if err != nil {
+		return err
+	}
+
+	return ioutil.WriteFile(path, json, 0600)
 }

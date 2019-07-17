@@ -21,10 +21,11 @@ require (
 	github.com/karalabe/hid v1.0.0 // indirect
 	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/pborman/uuid v1.2.0 // indirect
+	github.com/pborman/uuid v1.2.0
 	github.com/rjeczalik/notify v0.9.2 // indirect
 	github.com/rs/cors v1.6.0 // indirect
 	github.com/satori/go.uuid v1.2.0
+	github.com/spf13/cobra v0.0.4
 	github.com/stretchr/testify v1.3.0
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	gitlab.com/NebulousLabs/Sia v1.4.1-0.20190621144230-6d5c4f76046d

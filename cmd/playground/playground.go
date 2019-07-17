@@ -75,16 +75,16 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	drSiaChain := sia.NewDryRunBlockchain(*siaChain)
+	drSiaChain := sia.NewDryRunBlockchain(siaChain)
 
 	err = ethChain.CheckSmartContract()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	go server(ethChain, &drSiaChain)
+	go server(ethChain, drSiaChain)
 	time.Sleep(time.Second)
-	client(ethChain, &drSiaChain)
+	client(ethChain, drSiaChain)
 }
 
 func server(ethChain ethereum.Blockchain, siaChain sia.Blockchain) {

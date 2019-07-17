@@ -23,7 +23,7 @@ type (
 	}
 
 	DryRunBlockchain struct {
-		chain HTTPAPIBlockchain
+		chain *HTTPAPIBlockchain
 	}
 
 	Blockchain interface {
@@ -172,8 +172,9 @@ func (c *HTTPAPIBlockchain) ConfsOfRecentUnlockHash(unlockHash types.UnlockHash,
 	return 0, nil
 }
 
-func NewDryRunBlockchain(chain HTTPAPIBlockchain) DryRunBlockchain {
-	return DryRunBlockchain{chain: chain}
+func NewDryRunBlockchain(chain *HTTPAPIBlockchain) *DryRunBlockchain {
+	c := DryRunBlockchain{chain: chain}
+	return &c
 }
 
 func (c *DryRunBlockchain) FetchUsableOutputs() ([]UsableOutput, error) {

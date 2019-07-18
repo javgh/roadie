@@ -105,6 +105,8 @@ func NewGanacheBlockchain() (*GethBlockchain, error) {
 		return nil, err
 	}
 
+	time.Sleep(1200 * time.Millisecond) // wait for contract to deploy
+
 	retryingHub := retryinghub.New(
 		*ganacheMaxGasPrice, ganacheBoostInterval, ganacheTxCheckInterval, client, *privKeyECDSA, walletAddress, hub)
 

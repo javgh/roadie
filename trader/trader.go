@@ -73,7 +73,7 @@ var (
 	ErrParsingFailed        = errors.New("unable to parse exchange rate")
 	ErrExchangeRateNotFound = errors.New("requested exchange rate not found")
 
-	exchangeRateExpiration, _ = time.ParseDuration("2m")
+	exchangeRateExpiration, _ = time.ParseDuration("5m")
 	exchangeRateInterval, _   = time.ParseDuration("1m")
 	httpTimeout, _            = time.ParseDuration("20s")
 

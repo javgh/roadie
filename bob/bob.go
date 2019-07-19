@@ -74,7 +74,7 @@ const (
 	stateRefunded
 	stateAborted
 
-	timelockOffset        = types.BlockHeight(1)
+	timelockOffset        = types.BlockHeight(24) // 24 blocks (~ 4 hours)
 	antiSpamConfirmations = 8
 	depositConfirmations  = 8
 )

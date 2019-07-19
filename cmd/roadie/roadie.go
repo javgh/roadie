@@ -30,9 +30,11 @@ const (
 )
 
 var (
+	contractAddressHex   = "0x8CeF4dDFFcad47Ead5389A60ca9771EEe33Fd460"
 	siaDaemonAddress     = "localhost:9980"
 	siaPasswordFile      = config.PrependHomeDirectory(".sia/apipassword")
 	siaDryRun            = false
+	fundingConfirmations = int64(3)
 	useGanache           = false
 	serverAddress        = "localhost:9000"
 	externalAddress      = "localhost:9000"
@@ -47,14 +49,19 @@ var (
 	defaultAntiSpamFee            = big.NewInt(1e14)
 	registryEntryMaxAge           = big.NewInt(14 * 24 * 60 * 60) // 14 days in seconds
 	registryEntryMaxAgeWithMargin = big.NewInt(15 * 24 * 60 * 60) // 15 days in seconds
-	contractAddress               = common.HexToAddress("0x8CeF4dDFFcad47Ead5389A60ca9771EEe33Fd460")
 )
 
 func initChains() (ethereum.Blockchain, sia.Blockchain, error) {
+	var maybeContractAddress *common.Address
+	if contractAddressHex != "" {
+		contractAddress := common.HexToAddress(contractAddressHex)
+		maybeContractAddress = &contractAddress
+	}
+
 	var err error
 	var ethChain ethereum.Blockchain
 	if useGanache {
-		ethChain, err = ethereum.NewGanacheBlockchain()
+		ethChain, err = ethereum.NewGanacheBlockchain(maybeContractAddress)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -67,7 +74,7 @@ func initChains() (ethereum.Blockchain, sia.Blockchain, error) {
 		maxGasPrice := new(big.Int).Mul(big.NewInt(maxGasPriceInGwei), gwei)
 		boostInterval := time.Duration(boostIntervalSeconds) * time.Second
 		ethChain, err = ethereum.NewLocalNodeBlockchain(
-			jsonRPCEndpoint, keystoreFile, &contractAddress, *maxGasPrice, boostInterval)
+			jsonRPCEndpoint, keystoreFile, maybeContractAddress, *maxGasPrice, boostInterval)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -177,7 +184,7 @@ func buy(cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	err = alice.PerformSwap(hastings, frontend, ethChain, siaChain, roadieClient)
+	err = alice.PerformSwap(hastings, frontend, fundingConfirmations, ethChain, siaChain, roadieClient)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -193,6 +200,7 @@ func main() {
 	cmdServe.Flags().StringVarP(&certFile, "cert", "c", certFile, "path to certificate (or omit to disable encryption)")
 	cmdServe.Flags().StringVarP(&keyFile, "key", "k", certFile, "path to certificate key (or omit to disable encryption)")
 	cmdServe.Flags().StringVarP(&externalAddress, "addr", "a", externalAddress, "external server address (host and port to register with the smart contract)")
+	cmdServe.Flags().BoolVar(&siaDryRun, "sia-dry-run", siaDryRun, "do not actually broadcast Sia transactions")
 
 	cmdBuy := &cobra.Command{
 		Use:   "buy [SC amount]",
@@ -200,16 +208,20 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		Run:   buy,
 	}
+	cmdBuy.Flags().Int64VarP(&fundingConfirmations, "sia-confs", "c", fundingConfirmations, "Sia confirmations to require before proceeding with a swap")
 
 	rootCmd := &cobra.Command{Use: "roadie"}
 	rootCmd.AddCommand(cmdServe, cmdBuy)
+	rootCmd.PersistentFlags().StringVar(&contractAddressHex, "contract", contractAddressHex, "registry contract; set to empty string to deploy a new one")
 	rootCmd.PersistentFlags().StringVar(&siaPasswordFile, "sia-password-file", siaPasswordFile, "path to Sia API password file")
 	rootCmd.PersistentFlags().StringVar(&siaDaemonAddress, "sia-daemon", siaDaemonAddress, "host and port of Sia daemon")
-	rootCmd.PersistentFlags().BoolVar(&siaDryRun, "sia-dry-run", siaDryRun, "do not actually broadcast Sia transactions")
 	rootCmd.PersistentFlags().BoolVarP(&useGanache, "ganache", "g", useGanache, "use Ganache as Ethereum node (expected at 127.0.0.1:8545)")
 	rootCmd.PersistentFlags().StringVar(&jsonRPCEndpoint, "ethereum-node", jsonRPCEndpoint, "IPC socket/pipe to Ethereum node")
 	rootCmd.PersistentFlags().Int64Var(&maxGasPriceInGwei, "max-gas-price", maxGasPriceInGwei, "maximum amount (in Gwei) when boosting the gas price")
 	rootCmd.PersistentFlags().Int64Var(&boostIntervalSeconds, "boost-interval", boostIntervalSeconds, "seconds to wait for a transaction to confirm before boosting gas price")
 
-	rootCmd.Execute()
+	err := rootCmd.Execute()
+	if err != nil {
+		log.Fatal(err)
+	}
 }

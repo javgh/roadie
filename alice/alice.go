@@ -19,10 +19,8 @@ import (
 
 const (
 	antiSpamConfirmations = 10
-	fundingConfirmations  = 1 //3
 	depositConfirmations  = 10
-	minTimelockOffset     = 1
-	//minTimelockOffset     = types.BlockHeight(24 - 2) // 24 blocks (~ 4 hours) with some leeway
+	minTimelockOffset     = types.BlockHeight(24 - 2) // 24 blocks (~ 4 hours) with some leeway
 )
 
 var (
@@ -54,7 +52,7 @@ func (d *confirmationDisplay) show(current int64) {
 	}
 }
 
-func PerformSwap(siacoin types.Currency, frontend frontend.Frontend,
+func PerformSwap(siacoin types.Currency, frontend frontend.Frontend, fundingConfirmations int64,
 	ethChain ethereum.Blockchain, siaChain sia.Blockchain, roadieClient *rpc.Client) error {
 
 	id, nonBindingOffer, err := roadieClient.RequestNonBindingOffer(siacoin)

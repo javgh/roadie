@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	serverNetwork = "tcp"
-	serverAddress = "localhost:9000"
+	serverNetwork        = "tcp"
+	serverAddress        = "localhost:9000"
+	fundingConfirmations = 1
 )
 
 var (
@@ -72,7 +73,7 @@ func client(t *testing.T, ethChain ethereum.Blockchain, siaChain sia.Blockchain)
 		t.Fatal(err)
 	}
 
-	err = alice.PerformSwap(oneSiacoin, frontend, ethChain, siaChain, roadieClient)
+	err = alice.PerformSwap(oneSiacoin, frontend, fundingConfirmations, ethChain, siaChain, roadieClient)
 	if err != nil {
 		t.Fatal(err)
 	}

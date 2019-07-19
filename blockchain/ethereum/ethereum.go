@@ -87,7 +87,7 @@ type (
 	}
 )
 
-func NewGanacheBlockchain() (*GethBlockchain, error) {
+func NewGanacheBlockchain(contractAddress *common.Address) (*GethBlockchain, error) {
 	client, err := ethclient.Dial(ganacheEndpoint)
 	if err != nil {
 		return nil, err
@@ -99,10 +99,18 @@ func NewGanacheBlockchain() (*GethBlockchain, error) {
 	}
 	walletAddress := crypto.PubkeyToAddress(privKeyECDSA.PublicKey)
 
-	auth := bind.NewKeyedTransactor(privKeyECDSA)
-	_, _, hub, err := contract.DeployHub(auth, client)
-	if err != nil {
-		return nil, err
+	var hub *contract.Hub
+	if contractAddress != nil {
+		hub, err = contract.NewHub(*contractAddress, client)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		auth := bind.NewKeyedTransactor(privKeyECDSA)
+		_, _, hub, err = contract.DeployHub(auth, client)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	time.Sleep(1200 * time.Millisecond) // wait for contract to deploy

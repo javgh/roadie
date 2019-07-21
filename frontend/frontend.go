@@ -12,7 +12,8 @@ import (
 
 type (
 	ConsoleFrontend struct {
-		exchangeRate trader.ExchangeRate
+		useExchangeRate bool
+		exchangeRate    trader.ExchangeRate
 	}
 
 	AutoAcceptFrontend struct{}
@@ -22,8 +23,8 @@ type (
 	}
 )
 
-func NewConsoleFrontend() *ConsoleFrontend {
-	frontend := ConsoleFrontend{exchangeRate: trader.NewExchangeRate()}
+func NewConsoleFrontend(useExchangeRate bool) *ConsoleFrontend {
+	frontend := ConsoleFrontend{useExchangeRate: useExchangeRate, exchangeRate: trader.NewExchangeRate()}
 	return &frontend
 }
 
@@ -32,31 +33,39 @@ func (f *ConsoleFrontend) ApproveOffer(siacoin types.Currency, offer trader.Offe
 		return false, nil
 	}
 
-	usdEther, err := f.exchangeRate.Fetch("ethereum")
-	if err != nil {
-		return false, err
-	}
+	antiSpamFeeUSDSegment := ""
+	etherUSDSegment := ""
+	siacoinUSDSegment := ""
+	if f.useExchangeRate {
+		usdEther, err := f.exchangeRate.Fetch("ethereum")
+		if err != nil {
+			return false, err
+		}
 
-	usdSiacoin, err := f.exchangeRate.Fetch("siacoin")
-	if err != nil {
-		return false, err
-	}
+		usdSiacoin, err := f.exchangeRate.Fetch("siacoin")
+		if err != nil {
+			return false, err
+		}
 
-	antiSpamFeeUSD := ethereum.ApplyRate(&offer.AntiSpamFee, usdEther)
-	etherUSD := ethereum.ApplyRate(&offer.Ether, usdEther)
-	siacoinUSD := sia.ApplyRate(siacoin, usdSiacoin)
+		antiSpamFeeUSD := ethereum.ApplyRate(&offer.AntiSpamFee, usdEther)
+		etherUSD := ethereum.ApplyRate(&offer.Ether, usdEther)
+		siacoinUSD := sia.ApplyRate(siacoin, usdSiacoin)
+
+		antiSpamFeeUSDSegment = fmt.Sprintf(" (~ %s)", trader.FormatUSD(antiSpamFeeUSD))
+		etherUSDSegment = fmt.Sprintf(" (~ %s)", trader.FormatUSD(etherUSD))
+		siacoinUSDSegment = fmt.Sprintf(" (~ %s)", trader.FormatUSD(siacoinUSD))
+	}
 
 	fmt.Printf("Best offer received:\n")
 	if !binding {
-		fmt.Printf("Burn: %s (~ %s)\n", ethereum.FormatEther(&offer.AntiSpamFee), trader.FormatUSD(antiSpamFeeUSD))
+		fmt.Printf("Burn: %s%s\n", ethereum.FormatEther(&offer.AntiSpamFee), antiSpamFeeUSDSegment)
 	}
-	fmt.Printf("Give: %s (~ %s)\n", ethereum.FormatEther(&offer.Ether), trader.FormatUSD(etherUSD))
-	fmt.Printf("Get : %s (~ %s)\n", siacoin.HumanString(), trader.FormatUSD(siacoinUSD))
+	fmt.Printf("Give: %s%s\n", ethereum.FormatEther(&offer.Ether), etherUSDSegment)
+	fmt.Printf("Get : %s%s\n", siacoin.HumanString(), siacoinUSDSegment)
 	fmt.Printf("\nThe offer contains the following message:\n")
 	fmt.Printf("-----BEGIN MESSAGE-----\n")
 	fmt.Println(offer.Msg)
 	fmt.Printf("-----END MESSAGE-----\n\n")
-	fmt.Printf("USD amounts are based on data from CoinMarketCap.\n\n")
 
 	if !binding {
 		fmt.Printf("Note that this offer is non-binding. To continue, you will need to burn\n")

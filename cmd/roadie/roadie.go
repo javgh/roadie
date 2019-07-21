@@ -44,6 +44,7 @@ var (
 	keystoreFile         = config.PrependConfigDirectory("keystore")
 	maxGasPriceInGwei    = int64(21)
 	boostIntervalSeconds = int64(90)
+	useExchangeRate      = false
 
 	gwei                          = big.NewInt(1e9)
 	defaultAntiSpamFee            = big.NewInt(1e14)
@@ -172,7 +173,7 @@ func buy(cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	frontend := frontend.NewConsoleFrontend()
+	frontend := frontend.NewConsoleFrontend(useExchangeRate)
 
 	serverDetails, err := ethChain.FetchServers(*registryEntryMaxAgeWithMargin)
 	if len(serverDetails) == 0 {
@@ -209,6 +210,7 @@ func main() {
 		Run:   buy,
 	}
 	cmdBuy.Flags().Int64VarP(&fundingConfirmations, "sia-confs", "c", fundingConfirmations, "Sia confirmations to require before proceeding with a swap")
+	cmdBuy.Flags().BoolVarP(&useExchangeRate, "usd-amounts", "$", useExchangeRate, "show approximate USD amounts based on data from CoinMarketCap")
 
 	rootCmd := &cobra.Command{Use: "roadie"}
 	rootCmd.AddCommand(cmdServe, cmdBuy)

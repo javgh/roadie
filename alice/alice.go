@@ -201,6 +201,9 @@ func PerformSwap(siacoin types.Currency, frontend frontend.Frontend, fundingConf
 		}
 	}
 
+	fmt.Printf("Should anything go wrong after this point, you can reclaim your deposit in about\n"+
+		"2 hours by running 'roadie reclaim %s'.\n\n", antiSpamID)
+
 	fmt.Printf("Announcing deposit and waiting for other party to claim it and reveal adaptor secret.\n")
 	err = roadieClient.AnnounceDeposit(*id)
 	if err != nil {
@@ -250,6 +253,6 @@ func PerformSwap(siacoin types.Currency, frontend frontend.Frontend, fundingConf
 }
 
 func ReclaimDeposit(ethChain ethereum.Blockchain, antiSpamID big.Int) error {
-	fmt.Printf("Reclaiming deposit with id %s.\n", &antiSpamID)
+	fmt.Printf("Attempting to reclaim deposit with id %s.\n", &antiSpamID)
 	return ethChain.ReclaimDeposit(antiSpamID)
 }

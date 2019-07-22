@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"math/big"
 	"os"
@@ -50,9 +51,11 @@ var (
 	defaultAntiSpamFee            = big.NewInt(1e14)
 	registryEntryMaxAge           = big.NewInt(14 * 24 * 60 * 60) // 14 days in seconds
 	registryEntryMaxAgeWithMargin = big.NewInt(15 * 24 * 60 * 60) // 15 days in seconds
+
+	errParsingFailed = errors.New("unable to parse id")
 )
 
-func initChains() (ethereum.Blockchain, sia.Blockchain, error) {
+func initEthChain() (ethereum.Blockchain, error) {
 	var maybeContractAddress *common.Address
 	if contractAddressHex != "" {
 		contractAddress := common.HexToAddress(contractAddressHex)
@@ -64,12 +67,12 @@ func initChains() (ethereum.Blockchain, sia.Blockchain, error) {
 	if useGanache {
 		ethChain, err = ethereum.NewGanacheBlockchain(maybeContractAddress)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	} else {
 		err = ethereum.EnsureKeystoreExists(keystoreFile)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
 		maxGasPrice := new(big.Int).Mul(big.NewInt(maxGasPriceInGwei), gwei)
@@ -77,23 +80,27 @@ func initChains() (ethereum.Blockchain, sia.Blockchain, error) {
 		ethChain, err = ethereum.NewLocalNodeBlockchain(
 			jsonRPCEndpoint, keystoreFile, maybeContractAddress, *maxGasPrice, boostInterval)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 
 	err = ethChain.CheckSmartContract()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
+	return ethChain, nil
+}
+
+func initSiaChain() (sia.Blockchain, error) {
 	siaPassword, err := config.ReadPasswordFile(siaPasswordFile)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	lnSiaChain, err := sia.NewLocalNodeBlockchain(siaDaemonAddress, siaPassword)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	var siaChain sia.Blockchain = lnSiaChain
@@ -101,11 +108,16 @@ func initChains() (ethereum.Blockchain, sia.Blockchain, error) {
 		siaChain = sia.NewDryRunBlockchain(lnSiaChain)
 	}
 
-	return ethChain, siaChain, nil
+	return siaChain, nil
 }
 
 func serve(cmd *cobra.Command, args []string) {
-	ethChain, siaChain, err := initChains()
+	ethChain, err := initEthChain()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	siaChain, err := initSiaChain()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -168,7 +180,12 @@ func buy(cmd *cobra.Command, args []string) {
 	}
 	hastings := types.SiacoinPrecision.Mul64(uint64(amount))
 
-	ethChain, siaChain, err := initChains()
+	ethChain, err := initEthChain()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	siaChain, err := initSiaChain()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -186,6 +203,24 @@ func buy(cmd *cobra.Command, args []string) {
 	}
 
 	err = alice.PerformSwap(hastings, frontend, fundingConfirmations, ethChain, siaChain, roadieClient)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func reclaim(cmd *cobra.Command, args []string) {
+	antiSpamID := new(big.Int)
+	_, ok := antiSpamID.SetString(args[0], 10)
+	if !ok {
+		log.Fatal(errParsingFailed)
+	}
+
+	ethChain, err := initEthChain()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = alice.ReclaimDeposit(ethChain, *antiSpamID)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -212,8 +247,15 @@ func main() {
 	cmdBuy.Flags().Int64VarP(&fundingConfirmations, "sia-confs", "c", fundingConfirmations, "Sia confirmations to require before proceeding with a swap")
 	cmdBuy.Flags().BoolVarP(&useExchangeRate, "usd-amounts", "$", useExchangeRate, "show approximate USD amounts based on data from CoinMarketCap")
 
+	cmdReclaim := &cobra.Command{
+		Use:   "reclaim [id]",
+		Short: "Reclaim deposit after a failed atomic swap",
+		Args:  cobra.ExactArgs(1),
+		Run:   reclaim,
+	}
+
 	rootCmd := &cobra.Command{Use: "roadie"}
-	rootCmd.AddCommand(cmdServe, cmdBuy)
+	rootCmd.AddCommand(cmdServe, cmdBuy, cmdReclaim)
 	rootCmd.PersistentFlags().StringVar(&contractAddressHex, "contract", contractAddressHex, "registry contract; set to empty string to deploy a new one")
 	rootCmd.PersistentFlags().StringVar(&siaPasswordFile, "sia-password-file", siaPasswordFile, "path to Sia API password file")
 	rootCmd.PersistentFlags().StringVar(&siaDaemonAddress, "sia-daemon", siaDaemonAddress, "host and port of Sia daemon")

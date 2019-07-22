@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/HyperspaceApp/ed25519"
+	"github.com/satori/go.uuid"
 	"gitlab.com/NebulousLabs/Sia/types"
 
 	"github.com/javgh/roadie/blockchain/ethereum"
@@ -15,6 +16,7 @@ import (
 	"github.com/javgh/roadie/frontend"
 	"github.com/javgh/roadie/keypair"
 	"github.com/javgh/roadie/rpc"
+	"github.com/javgh/roadie/trader"
 )
 
 const (
@@ -24,6 +26,8 @@ const (
 )
 
 var (
+	ErrNoServers         = errors.New("no server available")
+	ErrNoOffers          = errors.New("no offers received")
 	ErrTimelockTooShort  = errors.New("proposed timelock is too short")
 	ErrInvalidAdaptorSig = errors.New("unable to verify adaptor signature")
 	ErrInvalidClaimSig   = errors.New(
@@ -53,9 +57,69 @@ func (d *confirmationDisplay) show(current int64) {
 }
 
 func PerformSwap(siacoin types.Currency, frontend frontend.Frontend, fundingConfirmations int64,
-	ethChain ethereum.Blockchain, siaChain sia.Blockchain, roadieClient *rpc.Client) error {
+	serverDetails []ethereum.ServerDetails, ethChain ethereum.Blockchain, siaChain sia.Blockchain) error {
+	if len(serverDetails) == 0 {
+		return ErrNoServers
+	}
 
-	id, nonBindingOffer, err := roadieClient.RequestNonBindingOffer(siacoin)
+	var id *uuid.UUID
+	var nonBindingOffer *trader.Offer
+	var roadieClient *rpc.Client
+	var bestIdx int
+	var err error
+	for i := range serverDetails {
+		fmt.Printf("Requesting offer from %s: ", serverDetails[i].Target)
+		roadieClient, err = rpc.Dial(serverDetails[i].Target, serverDetails[i].Cert)
+		if err != nil {
+			fmt.Printf("error encountered\n")
+			continue
+		}
+
+		currentID, currentNonBindingOffer, err := roadieClient.RequestNonBindingOffer(siacoin)
+		if err != nil {
+			fmt.Printf("error encountered\n")
+			continue
+		}
+
+		err = roadieClient.Close()
+		if err != nil {
+			fmt.Printf("error encountered\n")
+			continue
+		}
+
+		if !currentNonBindingOffer.Available {
+			fmt.Printf("no offer available\n")
+			fmt.Printf("-----BEGIN MESSAGE-----\n")
+			fmt.Println(currentNonBindingOffer.Msg)
+			fmt.Printf("-----END MESSAGE-----\n\n")
+			continue
+		}
+
+		if nonBindingOffer == nil {
+			bestIdx = i
+			id = currentID
+			nonBindingOffer = currentNonBindingOffer
+			fmt.Printf("offer received\n")
+			continue
+		}
+
+		bestTotalAmount := new(big.Int).Add(&nonBindingOffer.Ether, &nonBindingOffer.AntiSpamFee)
+		totalAmount := new(big.Int).Add(&currentNonBindingOffer.Ether, &currentNonBindingOffer.AntiSpamFee)
+		if totalAmount.Cmp(bestTotalAmount) == -1 {
+			bestIdx = i
+			id = currentID
+			nonBindingOffer = currentNonBindingOffer
+		}
+
+		fmt.Printf("offer received\n")
+	}
+	fmt.Printf("\n")
+
+	if nonBindingOffer == nil {
+		return ErrNoOffers
+	}
+
+	roadieClient, err = rpc.Dial(serverDetails[bestIdx].Target, serverDetails[bestIdx].Cert)
 	if err != nil {
 		return err
 	}
@@ -249,7 +313,7 @@ func PerformSwap(siacoin types.Currency, frontend frontend.Frontend, fundingConf
 	}
 
 	fmt.Printf("Swap completed successfully with Sia claim transaction %s .\n", claimTx.ID())
-	return nil
+	return roadieClient.Close()
 }
 
 func ReclaimDeposit(ethChain ethereum.Blockchain, antiSpamID big.Int) error {

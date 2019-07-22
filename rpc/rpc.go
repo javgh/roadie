@@ -601,6 +601,10 @@ func (c *Client) AnnounceDeposit(id uuid.UUID) error {
 	return nil
 }
 
+func (c *Client) Close() error {
+	return c.conn.Close()
+}
+
 func Dial(target string, cert []byte) (*Client, error) {
 	opts := []grpc.DialOption{}
 	if len(cert) > 0 {

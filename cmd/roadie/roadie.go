@@ -193,16 +193,11 @@ func buy(cmd *cobra.Command, args []string) {
 	frontend := frontend.NewConsoleFrontend(useExchangeRate)
 
 	serverDetails, err := ethChain.FetchServers(*registryEntryMaxAgeWithMargin)
-	if len(serverDetails) == 0 {
-		log.Fatal("no server available")
-	}
-
-	roadieClient, err := rpc.Dial(serverDetails[0].Target, serverDetails[0].Cert)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = alice.PerformSwap(hastings, frontend, fundingConfirmations, ethChain, siaChain, roadieClient)
+	err = alice.PerformSwap(hastings, frontend, fundingConfirmations, serverDetails, ethChain, siaChain)
 	if err != nil {
 		log.Fatal(err)
 	}

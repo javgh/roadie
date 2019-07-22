@@ -68,12 +68,11 @@ func server(t *testing.T, ethChain ethereum.Blockchain, siaChain sia.Blockchain)
 func client(t *testing.T, ethChain ethereum.Blockchain, siaChain sia.Blockchain) {
 	frontend := frontend.AutoAcceptFrontend{}
 
-	roadieClient, err := rpc.Dial(serverAddress, []byte{})
-	if err != nil {
-		t.Fatal(err)
+	serverDetails := []ethereum.ServerDetails{
+		ethereum.ServerDetails{Target: serverAddress, Cert: []byte{}},
 	}
 
-	err = alice.PerformSwap(oneSiacoin, frontend, fundingConfirmations, ethChain, siaChain, roadieClient)
+	err := alice.PerformSwap(oneSiacoin, frontend, fundingConfirmations, serverDetails, ethChain, siaChain)
 	if err != nil {
 		t.Fatal(err)
 	}

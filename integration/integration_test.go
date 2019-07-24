@@ -72,7 +72,7 @@ func client(t *testing.T, ethChain ethereum.Blockchain, siaChain sia.Blockchain)
 		ethereum.ServerDetails{Target: serverAddress, Cert: []byte{}},
 	}
 
-	err := alice.PerformSwap(oneSiacoin, frontend, fundingConfirmations, serverDetails, ethChain, siaChain)
+	err := alice.PerformSwap(oneSiacoin, serverDetails, fundingConfirmations, frontend, ethChain, siaChain)
 	if err != nil {
 		t.Fatal(err)
 	}

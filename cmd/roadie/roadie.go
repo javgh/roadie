@@ -46,6 +46,7 @@ var (
 	maxGasPriceInGwei    = int64(21)
 	boostIntervalSeconds = int64(90)
 	useExchangeRate      = false
+	similarityPercentage = int64(1)
 
 	gwei                          = big.NewInt(1e9)
 	defaultAntiSpamFee            = big.NewInt(1e14)
@@ -190,14 +191,14 @@ func buy(cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	frontend := frontend.NewConsoleFrontend(useExchangeRate)
+	frontend := frontend.NewConsoleFrontend(similarityPercentage, useExchangeRate)
 
 	serverDetails, err := ethChain.FetchServers(*registryEntryMaxAgeWithMargin)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = alice.PerformSwap(hastings, frontend, fundingConfirmations, serverDetails, ethChain, siaChain)
+	err = alice.PerformSwap(hastings, serverDetails, fundingConfirmations, frontend, ethChain, siaChain)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -241,6 +242,7 @@ func main() {
 	}
 	cmdBuy.Flags().Int64VarP(&fundingConfirmations, "sia-confs", "c", fundingConfirmations, "Sia confirmations to require before proceeding with a swap")
 	cmdBuy.Flags().BoolVarP(&useExchangeRate, "usd-amounts", "$", useExchangeRate, "show approximate USD amounts based on data from CoinMarketCap")
+	cmdBuy.Flags().Int64VarP(&similarityPercentage, "similarity-percentage", "s", similarityPercentage, "consider offers within this range similar enough to not prompt the user again")
 
 	cmdReclaim := &cobra.Command{
 		Use:   "reclaim [id]",

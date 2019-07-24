@@ -252,3 +252,37 @@ func (r *ExchangeRate) Fetch(id string) (*big.Rat, error) {
 func FormatUSD(usd *big.Rat) string {
 	return fmt.Sprintf("%s USD", usd.FloatString(formatUSDPrecision))
 }
+
+func CheckSimilarity(a Offer, b Offer, percentage int64) bool {
+	if !a.Available && !b.Available {
+		return true
+	}
+
+	if a.Available != b.Available {
+		return false
+	}
+
+	// Both offers are available.
+
+	if a.Ether.Sign() == 0 && b.Ether.Sign() == 0 {
+		return true
+	}
+
+	if a.Ether.Sign() == 0 || b.Ether.Sign() == 0 {
+		return false
+	}
+
+	// Both offers are non-zero
+
+	relative := new(big.Rat).SetFrac(&a.Ether, &b.Ether)
+	relative.Sub(new(big.Rat).SetInt64(1), relative)
+	relative.Abs(relative)
+	relative.Mul(relative, new(big.Rat).SetInt64(100))
+
+	percentageAsRat := new(big.Rat).SetInt64(percentage)
+	if relative.Cmp(percentageAsRat) == 1 {
+		return false
+	}
+
+	return true
+}

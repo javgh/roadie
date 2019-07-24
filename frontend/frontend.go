@@ -12,19 +12,25 @@ import (
 
 type (
 	ConsoleFrontend struct {
-		useExchangeRate bool
-		exchangeRate    trader.ExchangeRate
+		similarityPercentage int64
+		useExchangeRate      bool
+		exchangeRate         trader.ExchangeRate
 	}
 
 	AutoAcceptFrontend struct{}
 
 	Frontend interface {
 		ApproveOffer(siacoin types.Currency, offer trader.Offer, binding bool) (bool, error)
+		CheckSimilarity(a trader.Offer, b trader.Offer) bool
 	}
 )
 
-func NewConsoleFrontend(useExchangeRate bool) *ConsoleFrontend {
-	frontend := ConsoleFrontend{useExchangeRate: useExchangeRate, exchangeRate: trader.NewExchangeRate()}
+func NewConsoleFrontend(similarityPercentage int64, useExchangeRate bool) *ConsoleFrontend {
+	frontend := ConsoleFrontend{
+		similarityPercentage: similarityPercentage,
+		useExchangeRate:      useExchangeRate,
+		exchangeRate:         trader.NewExchangeRate(),
+	}
 	return &frontend
 }
 
@@ -85,6 +91,14 @@ func (f *ConsoleFrontend) ApproveOffer(siacoin types.Currency, offer trader.Offe
 	return true, nil
 }
 
+func (f *ConsoleFrontend) CheckSimilarity(a trader.Offer, b trader.Offer) bool {
+	return trader.CheckSimilarity(a, b, f.similarityPercentage)
+}
+
 func (f AutoAcceptFrontend) ApproveOffer(siacoin types.Currency, offer trader.Offer, binding bool) (bool, error) {
 	return true, nil
+}
+
+func (f AutoAcceptFrontend) CheckSimilarity(a trader.Offer, b trader.Offer) bool {
+	return true
 }

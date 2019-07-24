@@ -56,8 +56,8 @@ func (d *confirmationDisplay) show(current int64) {
 	}
 }
 
-func PerformSwap(siacoin types.Currency, frontend frontend.Frontend, fundingConfirmations int64,
-	serverDetails []ethereum.ServerDetails, ethChain ethereum.Blockchain, siaChain sia.Blockchain) error {
+func PerformSwap(siacoin types.Currency, serverDetails []ethereum.ServerDetails, fundingConfirmations int64,
+	frontend frontend.Frontend, ethChain ethereum.Blockchain, siaChain sia.Blockchain) error {
 	if len(serverDetails) == 0 {
 		return ErrNoServers
 	}
@@ -156,7 +156,7 @@ func PerformSwap(siacoin types.Currency, frontend frontend.Frontend, fundingConf
 		return err
 	}
 
-	if bindingOffer.Ether.Cmp(&nonBindingOffer.Ether) != 0 {
+	if !frontend.CheckSimilarity(*nonBindingOffer, *bindingOffer) {
 		_, err = frontend.ApproveOffer(siacoin, *bindingOffer, true)
 		if err != nil {
 			return err

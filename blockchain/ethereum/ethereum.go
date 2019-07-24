@@ -333,12 +333,12 @@ func hash(id big.Int) [32]byte {
 }
 
 func FormatEther(ether *big.Int) string {
-	r := big.NewRat(0, 1).SetFrac(ether, oneEther)
+	r := new(big.Rat).SetFrac(ether, oneEther)
 	return fmt.Sprintf("%s ETH", r.FloatString(formatEtherPrecision))
 }
 
 func FormatGwei(ether *big.Int) string {
-	r := big.NewRat(0, 1).SetFrac(ether, gwei)
+	r := new(big.Rat).SetFrac(ether, gwei)
 	return fmt.Sprintf("%s Gwei", r.FloatString(formatGweiPrecision))
 }
 

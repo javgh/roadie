@@ -87,6 +87,11 @@ func initEthChain() (ethereum.Blockchain, error) {
 		}
 	}
 
+	err = ethChain.CheckBalance()
+	if err != nil {
+		return nil, err
+	}
+
 	err = ethChain.CheckSmartContract()
 	if err != nil {
 		return nil, err

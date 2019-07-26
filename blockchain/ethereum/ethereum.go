@@ -51,19 +51,22 @@ var (
 	ErrIncompatibleVersion = errors.New("smart contract has an incompatible version - please upgrade")
 	ErrDeprecated          = errors.New("smart contract is marked as deprecated - please check for updates")
 	ErrUnexpectedDirectory = errors.New("keystore location appears to be a directory")
+	ErrLowBalance          = fmt.Errorf("Ethereum balance needs to be at least %s - please deposit funds", FormatEther(minimumBalance))
 
 	gwei               = big.NewInt(1e9)
 	oneEther           = big.NewInt(1e18)
 	ganacheMaxGasPrice = new(big.Int).Mul(big.NewInt(100), gwei)
 	simulatedBalance   = new(big.Int).Mul(big.NewInt(100), oneEther)
 	simulatedGasLimit  = uint64(10000000)
+	minimumBalance     = big.NewInt(1e16) // 0.01 ETH
 )
 
 type (
 	GethBlockchain struct {
-		backend       bind.ContractBackend
-		walletAddress common.Address
-		retryingHub   retryinghub.RetryingHub
+		backend        bind.ContractBackend
+		walletAddress  common.Address
+		initialBalance *big.Int
+		retryingHub    retryinghub.RetryingHub
 	}
 
 	ServerDetails struct {
@@ -73,6 +76,7 @@ type (
 
 	Blockchain interface {
 		CheckSmartContract() error
+		CheckBalance() error
 		BurnAntiSpamFee(antiSpamID big.Int, antiSpamFee big.Int) error
 		CheckAntiSpamConfirmations(antiSpamID big.Int, antiSpamFee big.Int) (int64, error)
 		DepositEther(recipient common.Address, adaptorPubKey ed25519.CurvePoint, ether big.Int, antiSpamID big.Int) error
@@ -99,6 +103,11 @@ func NewGanacheBlockchain(contractAddress *common.Address) (*GethBlockchain, err
 	}
 	walletAddress := crypto.PubkeyToAddress(privKeyECDSA.PublicKey)
 
+	initialBalance, err := client.BalanceAt(context.Background(), walletAddress, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	var hub *contract.Hub
 	if contractAddress != nil {
 		hub, err = contract.NewHub(*contractAddress, client)
@@ -119,9 +128,10 @@ func NewGanacheBlockchain(contractAddress *common.Address) (*GethBlockchain, err
 		*ganacheMaxGasPrice, ganacheBoostInterval, ganacheTxCheckInterval, client, *privKeyECDSA, walletAddress, hub)
 
 	c := GethBlockchain{
-		backend:       client,
-		walletAddress: walletAddress,
-		retryingHub:   retryingHub,
+		backend:        client,
+		walletAddress:  walletAddress,
+		initialBalance: initialBalance,
+		retryingHub:    retryingHub,
 	}
 	return &c, nil
 }
@@ -153,9 +163,10 @@ func NewSimulatedBlockchain() (*GethBlockchain, error) {
 		*ganacheMaxGasPrice, ganacheBoostInterval, ganacheTxCheckInterval, backend, *privKeyECDSA, walletAddress, hub)
 
 	c := GethBlockchain{
-		backend:       backend,
-		walletAddress: walletAddress,
-		retryingHub:   retryingHub,
+		backend:        backend,
+		walletAddress:  walletAddress,
+		initialBalance: simulatedBalance,
+		retryingHub:    retryingHub,
 	}
 	return &c, nil
 }
@@ -186,6 +197,11 @@ func NewLocalNodeBlockchain(endpoint string, keystoreFile string, contractAddres
 	}
 	walletAddress := key.Address
 
+	initialBalance, err := client.BalanceAt(context.Background(), walletAddress, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	var hub *contract.Hub
 	if contractAddress != nil {
 		hub, err = contract.NewHub(*contractAddress, client)
@@ -204,9 +220,10 @@ func NewLocalNodeBlockchain(endpoint string, keystoreFile string, contractAddres
 		maxGasPrice, boostInterval, txCheckInterval, client, *key.PrivateKey, walletAddress, hub)
 
 	c := GethBlockchain{
-		backend:       client,
-		walletAddress: walletAddress,
-		retryingHub:   retryingHub,
+		backend:        client,
+		walletAddress:  walletAddress,
+		initialBalance: initialBalance,
+		retryingHub:    retryingHub,
 	}
 	return &c, nil
 }
@@ -224,6 +241,17 @@ func (c *GethBlockchain) CheckSmartContract() error {
 	deprecated := c.retryingHub.Deprecated()
 	if deprecated {
 		return ErrDeprecated
+	}
+
+	return nil
+}
+
+func (c *GethBlockchain) CheckBalance() error {
+	fmt.Printf("Ethereum address: %s\n", c.walletAddress.String())
+	fmt.Printf("Ethereum balance: %s\n\n", FormatEther(c.initialBalance))
+
+	if c.initialBalance.Cmp(minimumBalance) == -1 {
+		return ErrLowBalance
 	}
 
 	return nil

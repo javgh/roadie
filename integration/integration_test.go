@@ -38,6 +38,11 @@ func TestIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	err = ethChain.CheckBalance()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	err = ethChain.CheckSmartContract()
 	if err != nil {
 		t.Fatal(err)

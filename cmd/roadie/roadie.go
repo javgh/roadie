@@ -47,6 +47,8 @@ var (
 	boostIntervalSeconds = int64(90)
 	useExchangeRate      = false
 	similarityPercentage = int64(1)
+	absDiffRule          = float64(0)
+	relDiffRule          = float64(0)
 
 	gwei                          = big.NewInt(1e9)
 	defaultAntiSpamFee            = big.NewInt(1e14)
@@ -191,14 +193,20 @@ func buy(cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	frontend := frontend.NewConsoleFrontend(similarityPercentage, useExchangeRate)
+	var selectedFrontend frontend.Frontend
+	exchangeRate := trader.NewExchangeRate()
+	if absDiffRule == 0 && relDiffRule == 0 {
+		selectedFrontend = frontend.NewConsoleFrontend(similarityPercentage, useExchangeRate, exchangeRate)
+	} else {
+		selectedFrontend = frontend.NewRuleBasedFrontend(absDiffRule, relDiffRule, exchangeRate)
+	}
 
 	serverDetails, err := ethChain.FetchServers(*registryEntryMaxAgeWithMargin)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = alice.PerformSwap(hastings, serverDetails, fundingConfirmations, frontend, ethChain, siaChain)
+	err = alice.PerformSwap(hastings, serverDetails, fundingConfirmations, selectedFrontend, ethChain, siaChain)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -237,12 +245,24 @@ func main() {
 	cmdBuy := &cobra.Command{
 		Use:   "buy [SC amount]",
 		Short: "Buy Siacoin with Ether via an atomic swap",
-		Args:  cobra.ExactArgs(1),
-		Run:   buy,
+		Long: `Buy Siacoin with Ether via an atomic swap.
+
+If at least one of --abs-diff-rule or --rel-diff-rule is given, Roadie will
+automatically accept or decline an offer based on those rules. Using exchange
+rate data from CoinMarketCap, Roadie will compare the USD amount required to
+spend on an offer with the USD amount of SC received in return. In the case
+of --abs-diff-rule the absolute difference may not exceed the specified amount
+for the rule to match. For --rel-diff-rule the difference will be calculated
+as a percentage and compared to the specified value. Either of these two rules
+need to match for the offer to be accepted. Otherwise the offer will be rejected.`,
+		Args: cobra.ExactArgs(1),
+		Run:  buy,
 	}
 	cmdBuy.Flags().Int64VarP(&fundingConfirmations, "sia-confs", "c", fundingConfirmations, "Sia confirmations to require before proceeding with a swap")
 	cmdBuy.Flags().BoolVarP(&useExchangeRate, "usd-amounts", "$", useExchangeRate, "show approximate USD amounts based on data from CoinMarketCap")
 	cmdBuy.Flags().Int64VarP(&similarityPercentage, "similarity-percentage", "s", similarityPercentage, "consider offers within this range similar enough to not prompt the user again")
+	cmdBuy.Flags().Float64Var(&absDiffRule, "abs-diff-rule", absDiffRule, "absolute difference rule for rule-based offer decision; see help for details")
+	cmdBuy.Flags().Float64Var(&relDiffRule, "rel-diff-rule", relDiffRule, "relative difference rule in percentage for rule-based offer decision; see help for details")
 
 	cmdReclaim := &cobra.Command{
 		Use:   "reclaim [id]",

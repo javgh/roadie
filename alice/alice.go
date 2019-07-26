@@ -124,9 +124,13 @@ func PerformSwap(siacoin types.Currency, serverDetails []ethereum.ServerDetails,
 		return err
 	}
 
-	_, err = frontend.ApproveOffer(siacoin, *nonBindingOffer, false)
+	approved, err := frontend.ApproveOffer(siacoin, *nonBindingOffer, false)
 	if err != nil {
 		return err
+	}
+	if !approved {
+		fmt.Printf("Offer not suitable.\n")
+		return nil
 	}
 
 	antiSpamID, err := rand.Int(rand.Reader, maxAntiSpamID)
@@ -157,9 +161,13 @@ func PerformSwap(siacoin types.Currency, serverDetails []ethereum.ServerDetails,
 	}
 
 	if !frontend.CheckSimilarity(*nonBindingOffer, *bindingOffer) {
-		_, err = frontend.ApproveOffer(siacoin, *bindingOffer, true)
+		approved, err = frontend.ApproveOffer(siacoin, *bindingOffer, true)
 		if err != nil {
 			return err
+		}
+		if !approved {
+			fmt.Printf("Offer not suitable.\n")
+			return nil
 		}
 	}
 

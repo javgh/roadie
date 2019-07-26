@@ -2,6 +2,7 @@ package frontend
 
 import (
 	"fmt"
+	"math/big"
 
 	"gitlab.com/NebulousLabs/Sia/types"
 
@@ -14,22 +15,32 @@ type (
 	ConsoleFrontend struct {
 		similarityPercentage int64
 		useExchangeRate      bool
-		exchangeRate         trader.ExchangeRate
+		exchangeRate         Fetcher
 	}
 
 	AutoAcceptFrontend struct{}
+
+	RuleBasedFrontend struct {
+		absDiffRule  float64
+		relDiffRule  float64
+		exchangeRate Fetcher
+	}
 
 	Frontend interface {
 		ApproveOffer(siacoin types.Currency, offer trader.Offer, binding bool) (bool, error)
 		CheckSimilarity(a trader.Offer, b trader.Offer) bool
 	}
+
+	Fetcher interface {
+		Fetch(id string) (*big.Rat, error)
+	}
 )
 
-func NewConsoleFrontend(similarityPercentage int64, useExchangeRate bool) *ConsoleFrontend {
+func NewConsoleFrontend(similarityPercentage int64, useExchangeRate bool, exchangeRate Fetcher) *ConsoleFrontend {
 	frontend := ConsoleFrontend{
 		similarityPercentage: similarityPercentage,
 		useExchangeRate:      useExchangeRate,
-		exchangeRate:         trader.NewExchangeRate(),
+		exchangeRate:         exchangeRate,
 	}
 	return &frontend
 }
@@ -101,4 +112,60 @@ func (f AutoAcceptFrontend) ApproveOffer(siacoin types.Currency, offer trader.Of
 
 func (f AutoAcceptFrontend) CheckSimilarity(a trader.Offer, b trader.Offer) bool {
 	return true
+}
+
+func NewRuleBasedFrontend(absDiffRule float64, relDiffRule float64, exchangeRate Fetcher) *RuleBasedFrontend {
+	frontend := RuleBasedFrontend{
+		absDiffRule:  absDiffRule,
+		relDiffRule:  relDiffRule,
+		exchangeRate: exchangeRate,
+	}
+	return &frontend
+}
+
+func (f *RuleBasedFrontend) ApproveOffer(siacoin types.Currency, offer trader.Offer, binding bool) (bool, error) {
+	if !offer.Available {
+		return false, nil
+	}
+
+	usdEther, err := f.exchangeRate.Fetch("ethereum")
+	if err != nil {
+		return false, err
+	}
+
+	usdSiacoin, err := f.exchangeRate.Fetch("siacoin")
+	if err != nil {
+		return false, err
+	}
+
+	etherTotal := new(big.Int).Add(&offer.Ether, &offer.AntiSpamFee)
+
+	etherTotalUSD := ethereum.ApplyRate(etherTotal, usdEther)
+	siacoinUSD := sia.ApplyRate(siacoin, usdSiacoin)
+
+	if f.absDiffRule != 0 {
+		absDiff := new(big.Rat).Sub(etherTotalUSD, siacoinUSD)
+
+		absDiffRuleAsRat := new(big.Rat).SetFloat64(f.absDiffRule)
+		if absDiff.Cmp(absDiffRuleAsRat) != 1 {
+			return true, nil
+		}
+	}
+
+	if f.relDiffRule != 0 {
+		relDiff := new(big.Rat).Quo(etherTotalUSD, siacoinUSD)
+		relDiff.Sub(relDiff, new(big.Rat).SetInt64(1))
+		relDiff.Mul(relDiff, new(big.Rat).SetInt64(100))
+
+		relDiffRuleAsRat := new(big.Rat).SetFloat64(f.relDiffRule)
+		if relDiff.Cmp(relDiffRuleAsRat) != 1 {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (f *RuleBasedFrontend) CheckSimilarity(a trader.Offer, b trader.Offer) bool {
+	return false
 }

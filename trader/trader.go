@@ -27,7 +27,7 @@ type (
 	FixedPremiumTrader struct {
 		premiumUSD    *big.Rat
 		antiSpamFee   big.Int
-		exchangeRate  ExchangeRate
+		exchangeRate  *ExchangeRate
 		paused        bool
 		pauseDeadline *time.Time
 		ethChain      ethereum.Blockchain
@@ -203,10 +203,11 @@ func (t *FixedPremiumTrader) calculateSiacoinBalance() (*types.Currency, error) 
 	return &balance, nil
 }
 
-func NewExchangeRate() ExchangeRate {
+func NewExchangeRate() *ExchangeRate {
 	cache := cache.New(exchangeRateExpiration, exchangeRateInterval)
 	client := &http.Client{Timeout: httpTimeout}
-	return ExchangeRate{cache: cache, client: client}
+	exchangeRate := ExchangeRate{cache: cache, client: client}
+	return &exchangeRate
 }
 
 func (r *ExchangeRate) Fetch(id string) (*big.Rat, error) {
@@ -275,7 +276,7 @@ func CheckSimilarity(a Offer, b Offer, percentage int64) bool {
 	// Both offers are non-zero
 
 	relative := new(big.Rat).SetFrac(&a.Ether, &b.Ether)
-	relative.Sub(new(big.Rat).SetInt64(1), relative)
+	relative.Sub(relative, new(big.Rat).SetInt64(1))
 	relative.Abs(relative)
 	relative.Mul(relative, new(big.Rat).SetInt64(100))
 

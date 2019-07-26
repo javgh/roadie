@@ -1,7 +1,12 @@
 Integration test: go test -v -tags testing ./integration
+All tests: go test -v -tags testing ./...
 
 Coverage:
   go test -tags testing -coverprofile=/tmp/coverage.out -covermode=atomic -coverpkg=./... ./integration
   go tool cover -html=/tmp/coverage.out
 
 Ganache command: ganache-cli --account "0xa1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7,100000000000000000000" -b 1
+
+Ganache + Sia dry run:
+  go run cmd/roadie/roadie.go serve -g --contract "" --sia-dry-run
+  go run cmd/roadie/roadie.go buy 1 -g --contract "<address of deployed contract here>" -c 0

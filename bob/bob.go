@@ -87,8 +87,7 @@ var (
 	ErrInvalidRefundSig    = errors.New("unable to build valid refund transaction")
 	ErrInvalidDeposit      = errors.New("no suitable deposit recognized")
 
-	oneSiacoin             = types.SiacoinPrecision
-	defaultMinerFee        = oneSiacoin
+	defaultMinerFee        = types.SiacoinPrecision
 	atomicSwapLifetime, _  = time.ParseDuration("6h")
 	blacklistExpiration, _ = time.ParseDuration("6h")
 	blacklistInterval, _   = time.ParseDuration("1h")

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"math/big"
 	"os"
@@ -235,6 +236,15 @@ func reclaim(cmd *cobra.Command, args []string) {
 	}
 }
 
+func init_(cmd *cobra.Command, args []string) {
+	_, err := initEthChain()
+	if err == ethereum.ErrLowBalance {
+		fmt.Println(err)
+	} else if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func main() {
 	cmdServe := &cobra.Command{
 		Use:   "serve",
@@ -276,8 +286,14 @@ need to match for the offer to be accepted. Otherwise the offer will be rejected
 		Run:   reclaim,
 	}
 
+	cmdInit := &cobra.Command{
+		Use:   "init",
+		Short: "Initialize a new Ethereum wallet if necessary",
+		Run:   init_,
+	}
+
 	rootCmd := &cobra.Command{Use: "roadie"}
-	rootCmd.AddCommand(cmdServe, cmdBuy, cmdReclaim)
+	rootCmd.AddCommand(cmdServe, cmdBuy, cmdReclaim, cmdInit)
 	rootCmd.PersistentFlags().StringVar(&contractAddressHex, "contract", contractAddressHex, "registry contract; set to empty string to deploy a new one")
 	rootCmd.PersistentFlags().StringVar(&siaPasswordFile, "sia-password-file", siaPasswordFile, "path to Sia API password file")
 	rootCmd.PersistentFlags().StringVar(&siaDaemonAddress, "sia-daemon", siaDaemonAddress, "host and port of Sia daemon")

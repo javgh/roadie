@@ -51,7 +51,8 @@ var (
 	ErrIncompatibleVersion = errors.New("smart contract has an incompatible version - please upgrade")
 	ErrDeprecated          = errors.New("smart contract is marked as deprecated - please check for updates")
 	ErrUnexpectedDirectory = errors.New("keystore location appears to be a directory")
-	ErrLowBalance          = fmt.Errorf("Ethereum balance needs to be at least %s - please deposit funds", FormatEther(minimumBalance))
+	ErrLowBalance          = fmt.Errorf("Please deposit funds into the address listed above. "+
+		"A minimum of %s is needed to proceed.", FormatEther(minimumBalance))
 
 	gwei               = big.NewInt(1e9)
 	oneEther           = big.NewInt(1e18)

@@ -120,7 +120,7 @@ func initSiaChain() (sia.Blockchain, error) {
 	return siaChain, nil
 }
 
-func serve(cmd *cobra.Command, args []string) {
+func runServe(cmd *cobra.Command, args []string) {
 	ethChain, err := initEthChain()
 	if err != nil {
 		log.Fatal(err)
@@ -182,7 +182,7 @@ func serve(cmd *cobra.Command, args []string) {
 	}
 }
 
-func buy(cmd *cobra.Command, args []string) {
+func runBuy(cmd *cobra.Command, args []string) {
 	amount, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
 		log.Fatal(err)
@@ -218,7 +218,7 @@ func buy(cmd *cobra.Command, args []string) {
 	}
 }
 
-func reclaim(cmd *cobra.Command, args []string) {
+func runReclaim(cmd *cobra.Command, args []string) {
 	antiSpamID := new(big.Int)
 	_, ok := antiSpamID.SetString(args[0], 10)
 	if !ok {
@@ -236,7 +236,7 @@ func reclaim(cmd *cobra.Command, args []string) {
 	}
 }
 
-func init_(cmd *cobra.Command, args []string) {
+func runInit(cmd *cobra.Command, args []string) {
 	_, err := initEthChain()
 	if err == ethereum.ErrLowBalance {
 		fmt.Println(err)
@@ -249,7 +249,7 @@ func main() {
 	cmdServe := &cobra.Command{
 		Use:   "serve",
 		Short: "Start and register a server to offer atomic swaps",
-		Run:   serve,
+		Run:   runServe,
 	}
 	cmdServe.Flags().StringVarP(&serverAddress, "listen", "l", serverAddress, "interface and port to listen on")
 	cmdServe.Flags().StringVarP(&certFile, "cert", "c", certFile, "path to certificate (or omit to disable encryption)")
@@ -271,7 +271,7 @@ for the rule to match. For --rel-diff-rule the difference will be calculated
 as a percentage and compared to the specified value. Either of these two rules
 need to match for the offer to be accepted. Otherwise the offer will be rejected.`,
 		Args: cobra.ExactArgs(1),
-		Run:  buy,
+		Run:  runBuy,
 	}
 	cmdBuy.Flags().Int64VarP(&fundingConfirmations, "sia-confs", "c", fundingConfirmations, "Sia confirmations to require before proceeding with a swap")
 	cmdBuy.Flags().BoolVarP(&useExchangeRate, "usd-amounts", "$", useExchangeRate, "show approximate USD amounts based on data from CoinMarketCap")
@@ -283,13 +283,13 @@ need to match for the offer to be accepted. Otherwise the offer will be rejected
 		Use:   "reclaim [id]",
 		Short: "Reclaim deposit after a failed atomic swap",
 		Args:  cobra.ExactArgs(1),
-		Run:   reclaim,
+		Run:   runReclaim,
 	}
 
 	cmdInit := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a new Ethereum wallet if necessary",
-		Run:   init_,
+		Run:   runInit,
 	}
 
 	rootCmd := &cobra.Command{Use: "roadie"}

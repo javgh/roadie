@@ -54,7 +54,10 @@ func TestAtomicSwap(t *testing.T) {
 		assert.True(t, nonBindingOffer2.Available, "should receive non-binding offer")
 
 		antiSpamID := big.NewInt(0)
-		ethChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer1.AntiSpamFee)
+		err = ethChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer1.AntiSpamFee)
+		if err != nil {
+			t.Fatal(err)
+		}
 		time.Sleep(4 * time.Second) // wait for confirmations
 
 		bindingOffer1, err := swap1.RequestBindingOffer(*antiSpamID, now)

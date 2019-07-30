@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/HyperspaceApp/ed25519"
-	"github.com/satori/go.uuid"
+	uuid "github.com/satori/go.uuid"
 	"gitlab.com/NebulousLabs/Sia/types"
 
 	"github.com/javgh/roadie/blockchain/ethereum"
@@ -138,7 +138,12 @@ func PerformSwap(siacoin types.Currency, serverDetails []ethereum.ServerDetails,
 		return err
 	}
 	fmt.Printf("Burning anti-spam fee (id %s) and waiting for Ethereum confirmations.\n", antiSpamID)
-	ethChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer.AntiSpamFee)
+
+	err = ethChain.BurnAntiSpamFee(*antiSpamID, nonBindingOffer.AntiSpamFee)
+	if err != nil {
+		return err
+	}
+
 	confDisplay := confirmationDisplay{current: -1, total: antiSpamConfirmations}
 	for {
 		confs, err := ethChain.CheckAntiSpamConfirmations(*antiSpamID, nonBindingOffer.AntiSpamFee)
@@ -255,7 +260,11 @@ func PerformSwap(siacoin types.Currency, serverDetails []ethereum.ServerDetails,
 	}
 
 	fmt.Printf("Depositing payment and waiting for Ethereum confirmations.\n")
-	ethChain.DepositEther(adaptorDetails.DepositRecipient, adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
+	err = ethChain.DepositEther(adaptorDetails.DepositRecipient, adaptorDetails.AdaptorPubKey, bindingOffer.Ether, *antiSpamID)
+	if err != nil {
+		return err
+	}
+
 	confDisplay = confirmationDisplay{current: -1, total: depositConfirmations}
 	for {
 		confs, err := ethChain.CheckDepositConfirmations(

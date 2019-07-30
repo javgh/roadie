@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/HyperspaceApp/ed25519"
-	"github.com/satori/go.uuid"
+	uuid "github.com/satori/go.uuid"
 	"gitlab.com/NebulousLabs/Sia/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

@@ -21,9 +21,9 @@ var (
 func (r *MockExchangeRate) Fetch(id string) (*big.Rat, error) {
 	if id == "ethereum" {
 		return new(big.Rat).SetInt(oneEther), nil
-	} else {
-		return new(big.Rat).SetInt(types.SiacoinPrecision.Big()), nil
 	}
+
+	return new(big.Rat).SetInt(types.SiacoinPrecision.Big()), nil
 }
 
 func assertApproveOffer(t *testing.T, frontend *RuleBasedFrontend,

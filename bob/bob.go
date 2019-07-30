@@ -9,7 +9,7 @@ import (
 	"github.com/HyperspaceApp/ed25519"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/patrickmn/go-cache"
-	"github.com/satori/go.uuid"
+	uuid "github.com/satori/go.uuid"
 	"gitlab.com/NebulousLabs/Sia/types"
 
 	"github.com/javgh/roadie/blockchain/ethereum"

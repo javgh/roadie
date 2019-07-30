@@ -61,12 +61,12 @@ func server(t *testing.T, ethChain ethereum.Blockchain, siaChain sia.Blockchain)
 	}
 	bobServer, err := rpc.NewBobServer(serverNetwork, serverAddress, "", "", serverAddress, newAtomicSwap)
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err) // cannot use Fatal in goroutine
 	}
 
 	err = bobServer.Serve()
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
 	}
 }
 
@@ -74,7 +74,7 @@ func client(t *testing.T, ethChain ethereum.Blockchain, siaChain sia.Blockchain)
 	frontend := frontend.AutoAcceptFrontend{}
 
 	serverDetails := []ethereum.ServerDetails{
-		ethereum.ServerDetails{Target: serverAddress, Cert: []byte{}},
+		{Target: serverAddress, Cert: []byte{}},
 	}
 
 	err := alice.PerformSwap(oneSiacoin, serverDetails, fundingConfirmations, frontend, ethChain, siaChain)

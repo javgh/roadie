@@ -65,7 +65,7 @@ func NewSimulatedBlockchain() (*HTTPAPIBlockchain, error) {
 	go func() {
 		for {
 			time.Sleep(simulatedBlockInterval)
-			node.MineBlock()
+			_ = node.MineBlock()
 		}
 	}()
 

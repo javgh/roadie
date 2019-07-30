@@ -128,7 +128,7 @@ func (t *FixedPremiumTrader) checkPauseDeadline(now time.Time) {
 }
 
 func (t *FixedPremiumTrader) prepareOffer(siacoin types.Currency, minerFee types.Currency,
-	now time.Time, binding bool) (*Offer, *time.Time, error) {
+	now time.Time, _ bool) (*Offer, *time.Time, error) {
 	offer := Offer{
 		Msg:         "",
 		Available:   false,
@@ -281,9 +281,5 @@ func CheckSimilarity(a Offer, b Offer, percentage int64) bool {
 	relative.Mul(relative, new(big.Rat).SetInt64(100))
 
 	percentageAsRat := new(big.Rat).SetInt64(percentage)
-	if relative.Cmp(percentageAsRat) == 1 {
-		return false
-	}
-
-	return true
+	return relative.Cmp(percentageAsRat) != 1
 }

@@ -30,20 +30,19 @@ import (
 )
 
 const (
-	formatEtherPrecision     = 6
-	formatGweiPrecision      = 1
-	smallGasLimit            = 100000
-	mediumGasLimit           = 200000
-	largeGasLimit            = 1500000
-	txCheckInterval          = 10 * time.Second
-	ganacheEndpoint          = "http://127.0.0.1:8545"
-	ganachePrivKey           = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
-	ganacheBoostInterval     = 5 * time.Second
-	ganacheTxCheckInterval   = time.Second
-	simulatedPrivKey         = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
-	simulatedBlockInterval   = 500 * time.Millisecond
-	simulatedTxCheckInterval = time.Second
-	requiredMajorVersion     = 0
+	formatEtherPrecision   = 6
+	formatGweiPrecision    = 1
+	smallGasLimit          = 100000
+	mediumGasLimit         = 200000
+	largeGasLimit          = 1500000
+	txCheckInterval        = 10 * time.Second
+	ganacheEndpoint        = "http://127.0.0.1:8545"
+	ganachePrivKey         = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
+	ganacheBoostInterval   = 5 * time.Second
+	ganacheTxCheckInterval = time.Second
+	simulatedPrivKey       = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
+	simulatedBlockInterval = 500 * time.Millisecond
+	requiredMajorVersion   = 0
 )
 
 var (

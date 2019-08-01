@@ -36,10 +36,10 @@ var (
 	siaDaemonAddress     = "localhost:9980"
 	siaPasswordFile      = config.PrependHomeDirectory(".sia/apipassword")
 	siaDryRun            = false
-	fundingConfirmations = int64(3)
+	fundingConfirmations = int64(1)
 	useGanache           = false
-	serverAddress        = "localhost:9000"
-	externalAddress      = "localhost:9000"
+	serverAddress        = "localhost:9979"
+	externalAddress      = "localhost:9979"
 	certFile             = ""
 	keyFile              = ""
 	jsonRPCEndpoint      = config.PrependHomeDirectory(".ethereum/geth.ipc")

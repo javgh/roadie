@@ -18,7 +18,7 @@ import (
 
 const (
 	serverNetwork        = "tcp"
-	serverAddress        = "localhost:9000"
+	serverAddress        = "localhost:9979"
 	fundingConfirmations = 1
 )
 

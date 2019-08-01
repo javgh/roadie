@@ -141,6 +141,13 @@ func (h *RetryingHub) Deprecated() bool {
 	return deprecated.(bool)
 }
 
+func (h *RetryingHub) SuggestGasPrice() *big.Int {
+	gasPrice := robustRead(func() (interface{}, error) {
+		return h.backend.SuggestGasPrice(context.Background())
+	})
+	return gasPrice.(*big.Int)
+}
+
 func newBackoff() backoff.Backoff {
 	b := backoff.Backoff{
 		Min:    backoffMin,

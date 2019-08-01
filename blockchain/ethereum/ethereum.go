@@ -63,7 +63,6 @@ var (
 
 type (
 	GethBlockchain struct {
-		backend        bind.ContractBackend
 		walletAddress  common.Address
 		initialBalance *big.Int
 		retryingHub    retryinghub.RetryingHub
@@ -128,7 +127,6 @@ func NewGanacheBlockchain(contractAddress *common.Address) (*GethBlockchain, err
 		*ganacheMaxGasPrice, ganacheBoostInterval, ganacheTxCheckInterval, client, *privKeyECDSA, walletAddress, hub)
 
 	c := GethBlockchain{
-		backend:        client,
 		walletAddress:  walletAddress,
 		initialBalance: initialBalance,
 		retryingHub:    retryingHub,
@@ -163,7 +161,6 @@ func NewSimulatedBlockchain() (*GethBlockchain, error) {
 		*ganacheMaxGasPrice, ganacheBoostInterval, ganacheTxCheckInterval, backend, *privKeyECDSA, walletAddress, hub)
 
 	c := GethBlockchain{
-		backend:        backend,
 		walletAddress:  walletAddress,
 		initialBalance: simulatedBalance,
 		retryingHub:    retryingHub,
@@ -220,7 +217,6 @@ func NewLocalNodeBlockchain(endpoint string, keystoreFile string, contractAddres
 		maxGasPrice, boostInterval, txCheckInterval, client, *key.PrivateKey, walletAddress, hub)
 
 	c := GethBlockchain{
-		backend:        client,
 		walletAddress:  walletAddress,
 		initialBalance: initialBalance,
 		retryingHub:    retryingHub,
@@ -345,7 +341,8 @@ func (c *GethBlockchain) WalletAddress() common.Address {
 }
 
 func (c *GethBlockchain) SuggestGasPrice() (*big.Int, error) {
-	return c.backend.SuggestGasPrice(context.Background())
+	gasPrice := c.retryingHub.SuggestGasPrice()
+	return gasPrice, nil
 }
 
 func switchEndianness(in []byte) []byte {

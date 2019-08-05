@@ -25,6 +25,7 @@ const (
 var (
 	oneSiacoin         = types.SiacoinPrecision
 	defaultAntiSpamFee = big.NewInt(1e14)
+	maxAntiSpamFee     = big.NewInt(1e15)
 )
 
 func TestIntegration(t *testing.T) {
@@ -77,7 +78,8 @@ func client(t *testing.T, ethChain ethereum.Blockchain, siaChain sia.Blockchain)
 		{Target: serverAddress, Cert: []byte{}},
 	}
 
-	err := alice.PerformSwap(oneSiacoin, serverDetails, fundingConfirmations, frontend, ethChain, siaChain)
+	err := alice.PerformSwap(
+		oneSiacoin, serverDetails, maxAntiSpamFee, fundingConfirmations, frontend, ethChain, siaChain)
 	if err != nil {
 		t.Fatal(err)
 	}

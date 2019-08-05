@@ -56,7 +56,8 @@ func (d *confirmationDisplay) show(current int64) {
 	}
 }
 
-func PerformSwap(siacoin types.Currency, serverDetails []ethereum.ServerDetails, fundingConfirmations int64,
+func PerformSwap(siacoin types.Currency, serverDetails []ethereum.ServerDetails,
+	maxAntiSpamFee *big.Int, fundingConfirmations int64,
 	frontend frontend.Frontend, ethChain ethereum.Blockchain, siaChain sia.Blockchain) error {
 	if len(serverDetails) == 0 {
 		return ErrNoServers
@@ -92,6 +93,11 @@ func PerformSwap(siacoin types.Currency, serverDetails []ethereum.ServerDetails,
 			fmt.Printf("-----BEGIN MESSAGE-----\n")
 			fmt.Println(currentNonBindingOffer.Msg)
 			fmt.Printf("-----END MESSAGE-----\n\n")
+			continue
+		}
+
+		if currentNonBindingOffer.AntiSpamFee.Cmp(maxAntiSpamFee) == 1 {
+			fmt.Printf("excessive anti spam fee\n")
 			continue
 		}
 

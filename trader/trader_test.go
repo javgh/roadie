@@ -58,7 +58,7 @@ func TestTrader(t *testing.T) {
 		}
 
 		assert.True(t, offer.Available, "expected offer for 1000 SC")
-		assert.Equal(t, 1, offer.Ether.Sign(), "expected Ether amount to be positive")
+		assert.Equal(t, 1, offer.Ether.Sign(), "expected ether amount to be positive")
 	})
 
 	t.Run("PausedOrderPreparation", func(t *testing.T) {

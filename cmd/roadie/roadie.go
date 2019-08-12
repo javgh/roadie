@@ -252,9 +252,11 @@ func runInit(cmd *cobra.Command, args []string) {
 }
 
 func main() {
+	descServe := "Start and register a server to offer atomic swaps"
 	cmdServe := &cobra.Command{
 		Use:   "serve",
-		Short: "Start and register a server to offer atomic swaps",
+		Short: descServe,
+		Long:  fmt.Sprintf("%s.", descServe),
 		Run:   runServe,
 	}
 	cmdServe.Flags().StringVarP(&serverAddress, "listen", "l", serverAddress, "interface and port to listen on")
@@ -265,8 +267,8 @@ func main() {
 
 	cmdBuy := &cobra.Command{
 		Use:   "buy [SC amount]",
-		Short: "Buy Siacoin with Ether via an atomic swap",
-		Long: `Buy Siacoin with Ether via an atomic swap.
+		Short: "Buy siacoins with ether via an atomic swap",
+		Long: `Buy siacoins with ether via an atomic swap.
 
 If at least one of --abs-diff-rule or --rel-diff-rule is given, Roadie will
 automatically accept or decline an offer based on those rules. Using exchange
@@ -284,18 +286,22 @@ need to match for the offer to be accepted. Otherwise the offer will be rejected
 	cmdBuy.Flags().Int64VarP(&similarityPercentage, "similarity-percentage", "s", similarityPercentage, "consider offers within this range similar enough to not prompt the user again")
 	cmdBuy.Flags().Float64Var(&absDiffRule, "abs-diff-rule", absDiffRule, "absolute difference rule for rule-based offer decision; see help for details")
 	cmdBuy.Flags().Float64Var(&relDiffRule, "rel-diff-rule", relDiffRule, "relative difference rule in percentage for rule-based offer decision; see help for details")
-	cmdBuy.Flags().Float64Var(&maxAntiSpamFeeInEther, "max-anti-spam-fee", maxAntiSpamFeeInEther, "maximum anti spam fee (in Ether) to accept")
+	cmdBuy.Flags().Float64Var(&maxAntiSpamFeeInEther, "max-anti-spam-fee", maxAntiSpamFeeInEther, "maximum anti spam fee (in ether) to accept")
 
+	descReclaim := "Reclaim deposit after a failed atomic swap"
 	cmdReclaim := &cobra.Command{
 		Use:   "reclaim [id]",
-		Short: "Reclaim deposit after a failed atomic swap",
+		Short: descReclaim,
+		Long:  fmt.Sprintf("%s.", descReclaim),
 		Args:  cobra.ExactArgs(1),
 		Run:   runReclaim,
 	}
 
+	descInit := "Initialize a new Ethereum wallet if necessary"
 	cmdInit := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize a new Ethereum wallet if necessary",
+		Short: descInit,
+		Long:  fmt.Sprintf("%s.", descInit),
 		Run:   runInit,
 	}
 

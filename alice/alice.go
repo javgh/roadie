@@ -312,7 +312,7 @@ func PerformSwap(siacoin types.Currency, serverDetails []ethereum.ServerDetails,
 		}
 	}
 
-	fmt.Printf("Using adaptor secret to build a valid claim transaction and broadcast it.\n")
+	fmt.Printf("Using adaptor secret to build a valid claim transaction and to broadcast it.\n")
 
 	noncePoints := []ed25519.CurvePoint{aliceClaimNoncePoint, adaptorDetails.BobClaimNoncePoint}
 	adaptorSigAlice, err := keypair.JointSignWithAdaptorAlice(

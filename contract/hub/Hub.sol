@@ -1,4 +1,4 @@
-pragma solidity ^0.5.9;
+pragma solidity ^0.5.10;
 
 import "./Ed25519.sol";
 
@@ -92,7 +92,7 @@ contract Hub is Ed25519 {
         require(deposits[hashedAntiSpamID].recipient == msg.sender);
         require(adaptorPrivKey != 0);
 
-        (, uint adaptorPubKey) = scalarmult(adaptorPrivKey);    // check via Ed25519.sol
+        (, uint adaptorPubKey) = scalarMultBase(adaptorPrivKey);    // check via Ed25519.sol
         require(deposits[hashedAntiSpamID].adaptorPubKey == adaptorPubKey);
         adaptorPrivKeys[adaptorPubKey] = adaptorPrivKey;
 

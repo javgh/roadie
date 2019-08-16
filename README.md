@@ -98,7 +98,75 @@ currently for advanced users only. Not all aspects of running a server are
 documented yet. It will also probably be necessary to implement a custom pricing
 strategy - see `FixedPremiumTrader` in `trader/trader.go` for an example.
 
-## Gas cost
+## Sequence Diagram
+
+    Alice                                   Bob
+    -----                                   ---
+                                            register server on blockchain
+    request non-binding offer for X SC
+                                            send non-binding offer including:
+                                            message, availability, X ether, X anti-spam fee
+    decide on offer
+    pick fresh anti-spam id
+    make anti-spam payment to
+      hash(anti-spam id) and
+      wait for confirmations
+    request binding offer with
+      anti-spam id
+                                            verify anti-spam payment
+                                            lock in binding offer
+                                            if lock successful: remember anti-spam id
+                                            send binding offer including:
+                                            message, availability, X ether
+    decide on offer
+    accept offer and
+      send alicePubKey
+                                            build funding tx
+                                            build refund tx
+                                              with timelock 4 hours
+                                            send bobPubkey, fundingOutputID,
+                                              bobRefundUnlockHash, timelock,
+                                              bobRefundNoncePoint
+    check timelock
+    build refund tx
+    sign refund tx
+    send aliceRefundNoncePoint,
+      refundSigAlice
+                                            sign refund tx
+                                            verify refund tx
+                                            sign funding tx
+                                            broadcast funding tx
+                                            keep refund tx for potential rollback
+                                            send funding tx id
+    wait for funding tx id
+    verify funding tx
+    build claim tx
+    send aliceClaimUnlockHash,
+      aliceClaimNoncePoint
+                                            build claim tx
+                                            generate adaptor
+                                            adaptor sign claim tx
+                                            send bobClaimNoncePoint,
+                                              adaptorPubKey, adaptorSigBob,
+                                              depositRecipient
+    verify adaptor sig
+    deposit ether for adaptor
+      with timelock 2 hours
+      and burn anti-spam id
+    remember details for
+      potential rollback
+    wait for deposit tx
+    announce deposit
+                                            check deposit
+                                            claim deposit and publish adaptor
+                                            send ok
+    wait for adaptor
+    adaptor sign claim tx
+    combine sigs and adaptor
+    broadcast claim tx
+
+
+## Gas Cost
 
 The smart contract unfortunately does require a fair amount of gas. Especially
 performing the necessary elliptic curve math can use more than 1 000 000 gas in

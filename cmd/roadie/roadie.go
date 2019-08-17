@@ -32,7 +32,7 @@ const (
 )
 
 var (
-	contractAddressHex    = "0x8CeF4dDFFcad47Ead5389A60ca9771EEe33Fd460"
+	contractAddressHex    = "0x44f1911Df3E915b21F385892B75E36002A859dF7"
 	siaDaemonAddress      = "localhost:9980"
 	siaPasswordFile       = config.PrependHomeDirectory(".sia/apipassword")
 	siaDryRun             = false

@@ -4,6 +4,9 @@ Roadie facilitates an atomic swap between two parties that would like to
 exchange siacoins for ether. Roadie was created to help set the stage for
 [Sia](https://sia.tech/).
 
+![Roadie demo](https://i.imgur.com/Hfdl9B9.gif)
+(The screencast has been sped up and edited for clarity.)
+
 ## How It Works
 
 Alice has ether on the Ethereum blockchain and would like to trade with Bob, who

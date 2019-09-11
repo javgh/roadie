@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/HyperspaceApp/ed25519"
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 	"gitlab.com/NebulousLabs/Sia/types"
 
 	"github.com/javgh/roadie/blockchain/ethereum"

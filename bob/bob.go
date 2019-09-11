@@ -8,8 +8,8 @@ import (
 
 	"github.com/HyperspaceApp/ed25519"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/google/uuid"
 	"github.com/patrickmn/go-cache"
-	uuid "github.com/satori/go.uuid"
 	"gitlab.com/NebulousLabs/Sia/types"
 
 	"github.com/javgh/roadie/blockchain/ethereum"
@@ -109,7 +109,7 @@ func (b *Blacklist) contains(id big.Int) bool {
 
 func NewAtomicSwap(trader trader.Trader, ethChain ethereum.Blockchain, siaChain sia.Blockchain,
 	blacklist Blacklist, now time.Time) *AtomicSwap {
-	id := uuid.NewV4()
+	id := uuid.Must(uuid.NewRandom())
 	deadline := now.Add(atomicSwapLifetime)
 	atomicSwap := AtomicSwap{
 		ID:        id,

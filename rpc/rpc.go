@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/HyperspaceApp/ed25519"
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 	"gitlab.com/NebulousLabs/Sia/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -469,12 +469,12 @@ func (s *BobServer) Report() {
 
 	sort.Strings(keys)
 	for _, uuidStr := range keys {
-		k := uuid.Must(uuid.FromString(uuidStr))
+		k := uuid.MustParse(uuidStr)
 		log.Printf("State of %s: %s\n", k, s.atomicSwaps[k].StateText())
 	}
 
 	for _, uuidStr := range keys {
-		k := uuid.Must(uuid.FromString(uuidStr))
+		k := uuid.MustParse(uuidStr)
 		encodedTx, hasTx := s.atomicSwaps[k].EncodedRefundTransaction()
 		if hasTx {
 			log.Printf("Refund tx for %s: %s\n", k, encodedTx)
@@ -493,7 +493,7 @@ func (s *BobServer) Check(now time.Time) error {
 
 	sort.Strings(keys)
 	for _, uuidStr := range keys {
-		k := uuid.Must(uuid.FromString(uuidStr))
+		k := uuid.MustParse(uuidStr)
 		noLongerNeeded, refundTxID, err := s.atomicSwaps[k].Check(now)
 		if err != nil {
 			return err

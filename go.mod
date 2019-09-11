@@ -6,7 +6,7 @@ require (
 	github.com/HyperspaceApp/ed25519 v0.0.0-20180910071725-57bc43264693
 	github.com/allegro/bigcache v1.2.1 // indirect
 	github.com/apilayer/freegeoip v3.5.0+incompatible // indirect
-	github.com/aristanetworks/goarista v0.0.0-20190712234253-ed1100a1c015 // indirect
+	github.com/aristanetworks/goarista v0.0.0-20190909155222-05df9ecbb0dc // indirect
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/btcsuite/btcd v0.0.0-20190824003749-130ea5bddde3 // indirect
 	github.com/cespare/cp v1.1.1 // indirect
@@ -31,9 +31,9 @@ require (
 	github.com/mattn/go-runewidth v0.0.4 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/olekukonko/tablewriter v0.0.1 // indirect
-	github.com/oschwald/maxminddb-golang v1.4.0 // indirect
+	github.com/oschwald/maxminddb-golang v1.5.0 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/pborman/uuid v1.2.0
+	github.com/pborman/uuid v1.2.0 // indirect
 	github.com/prometheus/tsdb v0.10.0 // indirect
 	github.com/rjeczalik/notify v0.9.2 // indirect
 	github.com/rs/cors v1.7.0 // indirect

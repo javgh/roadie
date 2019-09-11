@@ -23,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/pborman/uuid"
 
 	contract "github.com/javgh/roadie/contract/hub"
 	"github.com/javgh/roadie/contract/retryinghub"
@@ -398,16 +397,19 @@ func EnsureKeystoreExists(path string) error {
 		return err
 	}
 
+	// Unfortunately keystore.newKey() is not exported. We would also like to
+	// avoid a dependency on github.com/pborman/uuid, because go-ethereum uses a
+	// vendored version of it. So we use keystore.NewKeyForDirectICAP() to get a
+	// Key struct with a fresh UUID and then fill in a fresh private key.
+	key := keystore.NewKeyForDirectICAP(rand.Reader)
+
 	privateKeyECDSA, err := ecdsa.GenerateKey(crypto.S256(), rand.Reader)
 	if err != nil {
 		return err
 	}
 
-	key := &keystore.Key{
-		Id:         uuid.NewRandom(),
-		Address:    crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
-		PrivateKey: privateKeyECDSA,
-	}
+	key.Address = crypto.PubkeyToAddress(privateKeyECDSA.PublicKey)
+	key.PrivateKey = privateKeyECDSA
 	json, err := keystore.EncryptKey(key, "", keystore.StandardScryptN, keystore.StandardScryptP)
 	if err != nil {
 		return err
